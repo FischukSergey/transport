@@ -1,0 +1,26 @@
+---
+description: Проверки кода через task lint и task test
+alwaysApply: true
+---
+
+# Проверки
+
+Линтер:
+
+```bash
+task lint
+```
+
+Тесты:
+
+```bash
+task test
+```
+
+Форматирование: `task fmt`. Установка пакета в окружение: `task tools:install`. Окно: `task run`. Полный прогон: `task`. Список целей: `task --list`.
+
+Не запускай `ruff`, `pytest`, pylint и flake8 напрямую, если пользователь явно не попросил иное.
+
+Пакеты ставь через `pip3`. Интерпретатор — `python3` (сейчас 3.13).
+
+`docker compose` пиши через пробел. На Windows Docker не используется. На Mac он допустим для проверок, в поставку exe не входит.

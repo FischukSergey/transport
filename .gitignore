@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# проверки и тесты
+.pytest_cache/
+.task/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# сборка PyInstaller
+build/
+dist/
+*.manifest
+
+# локальная база программы
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# входные файлы пользователя
+data/
+
+# секреты
+.env
+.env.*
+
+# редактор и система
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~

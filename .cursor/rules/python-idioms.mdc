@@ -1,0 +1,45 @@
+---
+description: Идиомы Python 3.13 для расчёта транспортировки
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python 3.13
+
+Проект на **Python 3.13**. В терминале — `python3` и `pip3`. Проверки и запуск — через `task`, не прямыми командами ruff и pytest.
+
+Слои: `ui` → `application` → `domain`. `ingest`, `quality` и `domain` не импортируют `ui` и `storage`. Окно не пишет SQL и не вызывает формулы напрямую. Предметные инварианты — `.cursor/rules/domain.mdc`.
+
+## Типы и ошибки
+
+```python
+def load(path: str) -> dict[str, str] | None:
+    ...
+
+try:
+    parse(row)
+except ValueError as exc:
+    raise InvalidRow(row_number) from exc
+```
+
+Аннотации — `list[str]`, `str | None`. Не `Optional`, `List`, `Dict` из `typing`.
+
+Ловите конкретное исключение. Цепочку причин сохраняйте через `raise ... from exc`.
+
+## Деньги и объёмы
+
+Объёмы и деньги — `Decimal`, не `float`.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+KOPECK = Decimal("0.01")
+cost.quantize(KOPECK, rounding=ROUND_HALF_UP)
+```
+
+## Чего не делать
+
+- Не считайте тариф и сверхлимит через `float`.
+- Не импортируйте PySide6, `sqlite3`, openpyxl и pandas из `domain`.
+- Не подключайте библиотеку ради того, что есть в стандартной библиотеке 3.13.
+- Не предлагайте синтаксис новее **3.13**.

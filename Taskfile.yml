@@ -1,0 +1,57 @@
+# https://taskfile.dev
+version: "3"
+
+silent: true
+
+vars:
+  PYTHON: python3
+  PIP: pip3
+
+tasks:
+  default:
+    desc: fmt + lint + test
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+
+  tools:install:
+    desc: Поставить пакет и инструменты разработки в текущее окружение
+    preconditions:
+      - sh: test -f pyproject.toml
+        msg: "нет pyproject.toml — сначала каркас Sprint 1"
+    cmds:
+      - "{{.PIP}} install -e '.[dev]'"
+
+  fmt:
+    desc: Форматировать код (ruff format)
+    preconditions:
+      - sh: test -f pyproject.toml
+        msg: "нет pyproject.toml — сначала каркас Sprint 1"
+    cmds:
+      - "{{.PYTHON}} -m ruff format"
+      - "{{.PYTHON}} -m ruff check --fix"
+
+  lint:
+    desc: Проверить стиль (ruff)
+    preconditions:
+      - sh: test -f pyproject.toml
+        msg: "нет pyproject.toml — сначала каркас Sprint 1"
+    cmds:
+      - "{{.PYTHON}} -m ruff check"
+
+  test:
+    desc: Запустить тесты
+    preconditions:
+      - sh: test -f pyproject.toml
+        msg: "нет pyproject.toml — сначала каркас Sprint 1"
+    cmds:
+      - "{{.PYTHON}} -m pytest"
+
+  run:
+    desc: Открыть окно программы
+    preconditions:
+      - sh: test -d src/transport
+        msg: "нет src/transport — сначала каркас Sprint 1"
+    cmds:
+      - "{{.PYTHON}} -m transport"
