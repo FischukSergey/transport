@@ -37,24 +37,32 @@ class MonthCase:
     overlimit_110_cost: Decimal
     overlimit_150_cost: Decimal
     surcharge: Decimal | None
+    net: Decimal
+    vat: Decimal | None = None
+    with_vat: bool = False
+    vat_rate: Decimal | None = None
 
 
 _TARIFF = Decimal(800)
+_VAT = Decimal("0.2")
+
+JANUARY_GROUP_5 = MonthCase(
+    "январь группы 5, 32 800 без НДС",
+    Decimal(40_000),
+    Decimal(0),
+    Decimal(2_000),
+    _TARIFF,
+    ConsumerKind.INDUSTRIAL,
+    None,
+    Decimal("30400.00"),
+    Decimal("0.00"),
+    Decimal("2400.00"),
+    None,
+    Decimal("32800.00"),
+)
 
 MONTH_CASES: tuple[MonthCase, ...] = (
-    MonthCase(
-        "январь, 2 000 м³ с коэффициентом 1,5",
-        Decimal(40_000),
-        Decimal(0),
-        Decimal(2_000),
-        _TARIFF,
-        ConsumerKind.INDUSTRIAL,
-        None,
-        Decimal("30400.00"),
-        Decimal("0.00"),
-        Decimal("2400.00"),
-        None,
-    ),
+    JANUARY_GROUP_5,
     MonthCase(
         "оба объёма сверхлимита",
         Decimal(10_000),
@@ -67,6 +75,7 @@ MONTH_CASES: tuple[MonthCase, ...] = (
         Decimal("880.00"),
         Decimal("2400.00"),
         None,
+        Decimal("8880.00"),
     ),
     MonthCase(
         "коммунально-бытовой, коэффициент 1",
@@ -80,6 +89,7 @@ MONTH_CASES: tuple[MonthCase, ...] = (
         Decimal("800.00"),
         Decimal("1600.00"),
         None,
+        Decimal("8000.00"),
     ),
     MonthCase(
         "спецнадбавка от базового объёма",
@@ -93,6 +103,7 @@ MONTH_CASES: tuple[MonthCase, ...] = (
         Decimal("0.00"),
         Decimal("2400.00"),
         Decimal("1900.00"),
+        Decimal("34700.00"),
     ),
     MonthCase(
         "нет ставки спецнадбавки",
@@ -106,5 +117,116 @@ MONTH_CASES: tuple[MonthCase, ...] = (
         Decimal("0.00"),
         Decimal("2400.00"),
         None,
+        Decimal("32800.00"),
+    ),
+    MonthCase(
+        "НДС отдельной суммой",
+        Decimal(40_000),
+        Decimal(0),
+        Decimal(2_000),
+        _TARIFF,
+        ConsumerKind.INDUSTRIAL,
+        None,
+        Decimal("30400.00"),
+        Decimal("0.00"),
+        Decimal("2400.00"),
+        None,
+        Decimal("32800.00"),
+        Decimal("6560.00"),
+        True,
+        _VAT,
+    ),
+    MonthCase(
+        "НДС выключен",
+        Decimal(40_000),
+        Decimal(0),
+        Decimal(2_000),
+        _TARIFF,
+        ConsumerKind.INDUSTRIAL,
+        None,
+        Decimal("30400.00"),
+        Decimal("0.00"),
+        Decimal("2400.00"),
+        None,
+        Decimal("32800.00"),
+        None,
+        False,
+        _VAT,
+    ),
+    MonthCase(
+        "флаг НДС без ставки",
+        Decimal(40_000),
+        Decimal(0),
+        Decimal(2_000),
+        _TARIFF,
+        ConsumerKind.INDUSTRIAL,
+        None,
+        Decimal("30400.00"),
+        Decimal("0.00"),
+        Decimal("2400.00"),
+        None,
+        Decimal("32800.00"),
+        None,
+        True,
+        None,
+    ),
+    MonthCase(
+        "копейка, половина вверх",
+        Decimal(5),
+        Decimal(0),
+        Decimal(0),
+        Decimal(1),
+        ConsumerKind.INDUSTRIAL,
+        None,
+        Decimal("0.01"),
+        Decimal("0.00"),
+        Decimal("0.00"),
+        None,
+        Decimal("0.01"),
     ),
 )
+
+
+KOPECK_VAT = MonthCase(
+    "НДС с половины копейки",
+    Decimal(5),
+    Decimal(0),
+    Decimal(0),
+    Decimal(1),
+    ConsumerKind.INDUSTRIAL,
+    None,
+    Decimal("0.01"),
+    Decimal("0.00"),
+    Decimal("0.00"),
+    None,
+    Decimal("0.01"),
+    Decimal("0.01"),
+    True,
+    Decimal("0.5"),
+)
+
+
+@dataclass(frozen=True)
+class GapCase:
+    name: str
+    volume: Decimal
+    overlimit_110: Decimal
+    overlimit_150: Decimal
+    consumer: ConsumerKind
+    surcharge_rate: Decimal | None
+    tariff: Decimal | None = None
+
+
+GAP_CASES: tuple[GapCase, ...] = (
+    GapCase(
+        "нет тарифа группы",
+        Decimal(40_000),
+        Decimal(0),
+        Decimal(2_000),
+        ConsumerKind.INDUSTRIAL,
+        Decimal(50),
+    ),
+)
+
+
+POPULATION_TARIFFS: tuple[Decimal | None, ...] = (Decimal(800), None)
