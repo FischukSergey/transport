@@ -20,7 +20,7 @@ Windows: запуск `Transport.exe` без установленного Python
 
 ## 3) CI
 
-На каждый push:
+На pull request в `main` и на push в `main`:
 
 - `task lint`;
 - `task test`.

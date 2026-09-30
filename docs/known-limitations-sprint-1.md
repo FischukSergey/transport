@@ -20,6 +20,6 @@
 
 ## Сборка
 
-**Нет exe для Windows.** CI проверяет стиль и импорт на Ubuntu. Сборка PyInstaller — спринт 9.
+**Нет exe для Windows.** CI на Ubuntu проверяет стиль и импорт пакета: pull request в `main` и push в `main`. Сборка PyInstaller — спринт 9. Удалённый прогон Actions появится после первого pull request или слияния в `main`.
 
 **Прогноза нет** и в этом спринте он не начинается.

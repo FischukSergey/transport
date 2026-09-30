@@ -19,7 +19,7 @@
 - PyInstaller, один exe;
 - workflow `windows-latest`: сборка и загрузка артефакта;
 - README: запуск на Mac, откуда взять exe, где лежит файл базы;
-- `task lint` и `task test` на push остаются зелёными;
+- `task lint` и `task test` на pull request в `main` и на push в `main` остаются зелёными;
 - короткий сценарий на Mac: справочник, импорт фикстуры, закрытие месяца, план-факт.
 
 ### Не входит
