@@ -24,11 +24,16 @@
 
 ## 3) CI и качество
 
-- [ ] GitHub Actions: `task lint`.
-- [ ] GitHub Actions: `task test`.
-- [ ] Дымовой тест импортирует пакет и не создаёт `QApplication`.
+- [x] GitHub Actions: `task lint`.
+  Примечание: `.github/workflows/ci.yml`, `ubuntu-latest`, Python 3.13 и Task. Запуск на pull request в `main` и на push в `main`. Локально `task lint` без замечаний.
+- [x] GitHub Actions: `task test`.
+  Примечание: тот же workflow вызывает `task test` после `task tools:install`. Локально тест зелёный.
+- [x] Дымовой тест импортирует пакет и не создаёт `QApplication`.
+  Примечание: `tests/test_import.py` импортирует `transport` и проверяет, что `PySide6.QtWidgets` не загружен. `task test`: 1 passed.
 
 ## 4) DoD
 
-- [ ] Чистый клон запускается по README.
-- [ ] Зафиксированы [`known-limitations-sprint-1.md`](known-limitations-sprint-1.md).
+- [x] Чистый клон запускается по README.
+  Примечание: `.venv` создан заново, `task tools:install`, `task lint` без замечаний, `task test` — 1 passed. Окно на `offscreen`: заголовок и текст заглушки, закрытие завершает процесс.
+- [x] Зафиксированы [`known-limitations-sprint-1.md`](known-limitations-sprint-1.md).
+  Примечание: нет движка, базы, импорта, exe и прогноза. Окно — заглушка. CI только на pull request в `main` и на push в `main`.
