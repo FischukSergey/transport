@@ -7,6 +7,13 @@ from transport.domain.month import (
     consumer_total,
     month_charges,
 )
+from transport.domain.transition import (
+    TransitionLine,
+    TransitionMonth,
+    TransitionTrace,
+    transition_charges,
+)
+from transport.domain.year_end import YearEndResult, YearMonth, year_end_reimbursement
 
 __all__ = [
     "ConsumerKind",
@@ -14,7 +21,14 @@ __all__ = [
     "Group",
     "MonthCharges",
     "PopulationExcluded",
+    "TransitionLine",
+    "TransitionMonth",
+    "TransitionTrace",
+    "YearEndResult",
+    "YearMonth",
     "consumer_total",
     "group_of",
     "month_charges",
+    "transition_charges",
+    "year_end_reimbursement",
 ]
