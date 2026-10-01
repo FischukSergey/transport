@@ -19,6 +19,37 @@ from transport.parameters import (
 ANNUAL_PLAN_GROUP_5 = Decimal("400.000")
 VOLUME_ZERO = Decimal("0.000")
 VOLUME_STEP = Decimal("0.001")
+# Объём внутри группы 6. Группу выбирает загрузка, не расчёт возмещения.
+VOLUME_IN_GROUP_6 = Decimal("50.000")
+YEAR_END_OVERLIMIT = Decimal("10.000")
+# База 40 × (тариф группы 6 − тариф группы 5) второго полугодия.
+YEAR_END_REIMBURSEMENT = Decimal("265.20")
+# Тот же объём без сверхлимита, первое полугодие.
+SERVICE_END_REIMBURSEMENT = Decimal("303.50")
+# Переход группа 5 → 4, первое полугодие. Прошлый объём 400, месяц смены 2:
+# тариф получается отрицательным и в плату не идёт.
+TRANSITION_PRIOR_VOLUME = Decimal("400.000")
+TRANSITION_NEGATIVE_VOLUME = Decimal("2.000")
+TRANSITION_TARIFF_NEGATIVE = Decimal("-115.47")
+TRANSITION_NEGATIVE_SURCHARGE = Decimal("513.56")
+# Отрицательный тариф в базу не идёт.
+NOT_APPLIED_BASE = Decimal("0.00")
+# Следующие 10 тыс. м³: тариф снова положительный, затем уже ставка новой группы.
+TRANSITION_RECOVER_VOLUME = Decimal("10.000")
+TRANSITION_TARIFF_RECOVERED = Decimal("1093.44")
+TRANSITION_RECOVERED_BASE = Decimal("10934.40")
+TRANSITION_PLAIN_BASE = Decimal("11165.30")
+# Короткий прошлый объём 10 при месяце 40: тариф месяца смены сразу положительный.
+TRANSITION_POSITIVE_PRIOR = Decimal("10.000")
+TRANSITION_POSITIVE_VOLUME = Decimal("40.000")
+TRANSITION_TARIFF_POSITIVE = Decimal("1114.99")
+TRANSITION_POSITIVE_BASE = Decimal("44599.60")
+# Ноябрь: по 10 тыс. м³ в каждом полугодии. Поправка −128,90 собирает обе разницы ставок.
+TRANSITION_HALF_VOLUME = Decimal("10.000")
+TRANSITION_NOVEMBER_VOLUME = Decimal("40.000")
+TRANSITION_NOVEMBER_CARRY = Decimal("-128.90")
+TRANSITION_NOVEMBER_TARIFF = Decimal("1217.15")
+TRANSITION_NOVEMBER_BASE = Decimal("48686.00")
 
 GROUP_BOUNDARIES: tuple[tuple[Decimal, Group], ...] = (
     (VOLUME_ZERO, Group.G7),

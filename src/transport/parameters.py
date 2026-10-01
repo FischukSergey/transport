@@ -23,6 +23,9 @@ GROUP_UPPER_INCLUSIVE: tuple[tuple[Decimal, Group], ...] = (
     (BOUND_G1, Group.G1),
 )
 
+# Вычет несогласованного сверхлимита при проверке группы, доля факта с начала года.
+OVERLIMIT_DEDUCT = Decimal("0.10")
+
 COEFFICIENT_110 = Decimal("1.1")
 COEFFICIENT_150 = Decimal("1.5")
 COEFFICIENT_UNIT = Decimal(1)
