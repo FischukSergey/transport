@@ -17,11 +17,7 @@ class PopulationExcluded(Exception):
         super().__init__(self.code)
 
 
-# Коэффициенты приходят с объёмами. Движок по датам их не назначает.
-COEFFICIENT_110 = Decimal("1.1")
-COEFFICIENT_150 = Decimal("1.5")
-_UNIT = Decimal(1)
-_PER_THOUSAND = Decimal(1000)
+# Копейка — формат денежного результата, не ставка и не объём.
 _KOPECK = Decimal("0.01")
 
 
@@ -62,26 +58,30 @@ def month_charges(
     tariff: Decimal | None,
     consumer: ConsumerKind,
     surcharge_rate: Decimal | None,
+    coefficient_110: Decimal,
+    coefficient_150: Decimal,
     with_vat: bool = False,
     vat_rate: Decimal | None = None,
 ) -> MonthCharges:
-    """Считает строку месяца. Месяц и даты не принимает.
+    """Считает строку месяца. Месяц, даты и числовые ставки сам не хранит.
 
+    Объём — тыс. м³. Тариф и спецнадбавка — руб. за тыс. м³. Коэффициенты приходят готовыми.
     Нет тарифа группы — пробел, суммы не подставляются.
     Население даёт отказ population_excluded, строка не создаётся.
     НДС — отдельная сумма и только при включённом флаге. Ставка НДС — доля.
-    Спецнадбавка считается от базового объёма. Нет её ставки — поле пустое, это не пробел.
+    Ставка сверхлимита — тариф × коэффициент, округлённый до копейки, затем объём.
+    Спецнадбавка считается от всего объёма месяца, включая сверхлимит.
+    Нет её ставки — поле пустое, это не пробел.
     """
     if consumer is ConsumerKind.POPULATION:
         raise PopulationExcluded
     if tariff is None:
         return MonthCharges(volume, None, None, None, None, net=None, vat=None, gap=True)
-    coefficient_110, coefficient_150 = _coefficients(consumer)
     base_volume = volume - overlimit_110 - overlimit_150
-    base = _money(base_volume * tariff / _PER_THOUSAND)
+    base = _money(base_volume * tariff)
     over_110 = _part(overlimit_110, tariff, coefficient_110)
     over_150 = _part(overlimit_150, tariff, coefficient_150)
-    surcharge = _surcharge(base_volume, surcharge_rate)
+    surcharge = _surcharge(volume, surcharge_rate)
     net = base + over_110 + over_150
     if surcharge is not None:
         net += surcharge
@@ -107,12 +107,6 @@ def consumer_total(lines: list[MonthCharges]) -> ConsumerTotal:
     )
 
 
-def _coefficients(consumer: ConsumerKind) -> tuple[Decimal, Decimal]:
-    if consumer is ConsumerKind.COMMUNAL:
-        return _UNIT, _UNIT
-    return COEFFICIENT_110, COEFFICIENT_150
-
-
 def _vat(net: Decimal, with_vat: bool, rate: Decimal | None) -> Decimal | None:
     if not with_vat or rate is None:
         return None
@@ -122,11 +116,12 @@ def _vat(net: Decimal, with_vat: bool, rate: Decimal | None) -> Decimal | None:
 def _surcharge(volume: Decimal, rate: Decimal | None) -> Decimal | None:
     if rate is None:
         return None
-    return _money(volume * rate / _PER_THOUSAND)
+    return _money(volume * rate)
 
 
 def _part(volume: Decimal, tariff: Decimal, coefficient: Decimal) -> Decimal:
-    return _money(volume * tariff * coefficient / _PER_THOUSAND)
+    rate = _money(tariff * coefficient)
+    return _money(volume * rate)
 
 
 def _money(amount: Decimal) -> Decimal:
