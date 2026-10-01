@@ -87,7 +87,9 @@ def test_november_switch_uses_both_half_year_tariffs() -> None:
         _month(TRANSITION_HALF_VOLUME, TARIFF_G5_FIRST, TARIFF_G4_FIRST),
         _month(TRANSITION_HALF_VOLUME, TARIFF_G5_SECOND, TARIFF_G4_SECOND),
     ]
-    result = _charges(prior, [_month(TRANSITION_NOVEMBER_VOLUME, TARIFF_G5_SECOND, TARIFF_G4_SECOND)])
+    result = _charges(
+        prior, [_month(TRANSITION_NOVEMBER_VOLUME, TARIFF_G5_SECOND, TARIFF_G4_SECOND)]
+    )
     assert len(result) == 1
     line = result[0]
     assert line.applied is True

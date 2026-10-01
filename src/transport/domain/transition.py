@@ -91,22 +91,62 @@ def transition_charges(
         trace = TransitionTrace(carry, month.tariff_new, base_volume)
         if settled:
             lines.append(
-                _applied(month, month.tariff_new, trace, consumer, coefficient_110, coefficient_150, with_vat, vat_rate)
+                _applied(
+                    month,
+                    month.tariff_new,
+                    trace,
+                    consumer,
+                    coefficient_110,
+                    coefficient_150,
+                    with_vat,
+                    vat_rate,
+                )
             )
             continue
         if base_volume == 0:
-            lines.append(_withheld(month, None, trace, consumer, coefficient_110, coefficient_150, with_vat, vat_rate))
+            lines.append(
+                _withheld(
+                    month,
+                    None,
+                    trace,
+                    consumer,
+                    coefficient_110,
+                    coefficient_150,
+                    with_vat,
+                    vat_rate,
+                )
+            )
             continue
         tariff = month.tariff_new + carry / base_volume
         if tariff > 0:
             settled = True
             carry = Decimal(0)
             lines.append(
-                _applied(month, _money(tariff), trace, consumer, coefficient_110, coefficient_150, with_vat, vat_rate)
+                _applied(
+                    month,
+                    _money(tariff),
+                    trace,
+                    consumer,
+                    coefficient_110,
+                    coefficient_150,
+                    with_vat,
+                    vat_rate,
+                )
             )
         else:
             carry = base_volume * tariff
-            lines.append(_withheld(month, tariff, trace, consumer, coefficient_110, coefficient_150, with_vat, vat_rate))
+            lines.append(
+                _withheld(
+                    month,
+                    tariff,
+                    trace,
+                    consumer,
+                    coefficient_110,
+                    coefficient_150,
+                    with_vat,
+                    vat_rate,
+                )
+            )
     return lines
 
 
