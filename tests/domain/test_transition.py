@@ -1,5 +1,20 @@
 import pytest
 from tests.domain.data import (
+    BALTIC_APRIL,
+    BALTIC_FEBRUARY,
+    BALTIC_JANUARY,
+    BALTIC_JANUARY_OVERLIMIT,
+    BALTIC_JULY,
+    BALTIC_JULY_BASE,
+    BALTIC_JULY_NET,
+    BALTIC_JULY_SURCHARGE,
+    BALTIC_JUNE,
+    BALTIC_MARCH,
+    BALTIC_MAY,
+    BALTIC_PLAN,
+    BALTIC_YTD_JULY,
+    BALTIC_YTD_JUNE,
+    JULY,
     NOT_APPLIED_BASE,
     SURCHARGE_CITY_JANUARY_SEPTEMBER,
     TARIFF_G4_FIRST,
@@ -24,11 +39,21 @@ from tests.domain.data import (
     TRANSITION_TARIFF_POSITIVE,
     TRANSITION_TARIFF_RECOVERED,
     VOLUME_ZERO,
+    Region,
+    half_of,
+    surcharge_of,
+    tariff_of,
 )
 
+from transport.domain.group import Group, group_of
 from transport.domain.month import ConsumerKind, PopulationExcluded
 from transport.domain.transition import TransitionMonth, transition_charges
-from transport.parameters import COEFFICIENT_110, COEFFICIENT_150
+from transport.parameters import (
+    COEFFICIENT_110,
+    COEFFICIENT_150,
+    GROUP_ABOVE,
+    GROUP_UPPER_INCLUSIVE,
+)
 
 
 def _month(
@@ -48,6 +73,37 @@ def _charges(prior: list[TransitionMonth], months: list[TransitionMonth], **kwar
         coefficient_110=COEFFICIENT_110,
         coefficient_150=COEFFICIENT_150,
     )
+
+
+def test_baltic_july_switches_from_group_7() -> None:
+    assert group_of(BALTIC_PLAN, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE) is Group.G7
+    assert group_of(BALTIC_YTD_JUNE, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE) is Group.G7
+    assert group_of(BALTIC_YTD_JULY, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE) is Group.G6
+    period = half_of(JULY)
+    old = tariff_of(Group.G7, period)
+    new = tariff_of(Group.G6, period)
+    prior = [
+        TransitionMonth(BALTIC_JANUARY, BALTIC_JANUARY_OVERLIMIT, VOLUME_ZERO, old, new),
+        _month(BALTIC_FEBRUARY, old, new),
+        _month(BALTIC_MARCH, old, new),
+        _month(BALTIC_APRIL, old, new),
+        _month(BALTIC_MAY, old, new),
+        _month(BALTIC_JUNE, old, new),
+    ]
+    july = TransitionMonth(
+        BALTIC_JULY,
+        VOLUME_ZERO,
+        VOLUME_ZERO,
+        old,
+        new,
+        surcharge_of(Region.CITY, JULY),
+    )
+    line = _charges(prior, [july])[0]
+    assert line.applied is True
+    assert line.charges is not None
+    assert line.charges.base == BALTIC_JULY_BASE
+    assert line.charges.surcharge == BALTIC_JULY_SURCHARGE
+    assert line.charges.net == BALTIC_JULY_NET
 
 
 def test_negative_tariff_is_carried_until_positive() -> None:

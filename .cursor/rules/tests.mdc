@@ -1,0 +1,19 @@
+---
+description: Граничные условия тестов живут отдельно от тела
+alwaysApply: true
+---
+
+# Тесты
+
+Граничные условия — даты, ставки, объёмы, коды, ожидаемые суммы — записываются отдельно от тела теста: именованные константы или таблица случаев рядом с тестами, как `tests/domain/data.py`.
+
+Тело принимает эти параметры и сравнивает результат с ожиданием. В теле нет литералов границы: ни даты, ни суммы, ни кода группы, ни ожидаемого числа строк.
+
+```python
+@pytest.mark.parametrize("lookup", TARIFF_LOOKUPS)
+def test_next_rate_date_closes_the_interval(lookup: TariffLookup, tmp_path: Path) -> None:
+    found = tariff_for_month(connection, group=lookup.group, year=lookup.year, month=lookup.month)
+    assert (None if found is None else found.rate) == lookup.rate
+```
+
+Цикл по уже переданному набору — подготовка данных, не место для новой границы. Новое граничное значение добавляется в таблицу случаев, а не вставляется в функцию теста.
