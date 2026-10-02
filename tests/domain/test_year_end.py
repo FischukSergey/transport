@@ -7,7 +7,7 @@ from tests.domain.data import (
     VOLUME_ZERO,
     YEAR_END_OVERLIMIT,
     YEAR_END_REIMBURSEMENT,
-    HalfYear,
+    half_of,
     tariff_of,
 )
 
@@ -22,7 +22,7 @@ def _month(volume, overlimit, charged, new) -> YearMonth:
 def test_year_end_reimburses_base_without_overlimit() -> None:
     months = []
     for index in range(12):
-        half = HalfYear.FIRST if index < 6 else HalfYear.SECOND
+        half = half_of(index + 1)
         volume = VOLUME_ZERO
         overlimit = VOLUME_ZERO
         if index == 11:

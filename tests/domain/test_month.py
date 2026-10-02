@@ -27,6 +27,7 @@ from tests.domain.data import (
     HalfYear,
     MonthCase,
     Region,
+    half_of,
     surcharge_of,
     tariff_of,
 )
@@ -127,6 +128,12 @@ def test_population_excluded(tariff: Decimal | None) -> None:
 )
 def test_surcharge_period(region: Region, month: int, rate: Decimal) -> None:
     assert surcharge_of(region, month) == rate
+
+
+def test_second_tariff_starts_in_october() -> None:
+    assert half_of(SEPTEMBER) is HalfYear.FIRST
+    assert half_of(OCTOBER) is HalfYear.SECOND
+    assert half_of(DECEMBER) is HalfYear.SECOND
 
 
 def test_year_tariffs() -> None:

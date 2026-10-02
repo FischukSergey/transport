@@ -82,12 +82,14 @@ class Region(IntEnum):
 
 
 JANUARY = 1
+JULY = 7
 SEPTEMBER = 9
 OCTOBER = 10
 DECEMBER = 12
 
 
-# Руб. за тыс. м³, два знака. Первое полугодие — январь–июнь, второе — июль–декабрь.
+# Руб. за тыс. м³, два знака. В текущем году вторая ставка действует с 1 октября.
+SECOND_PERIOD_MONTH = 10
 TARIFF_G1A_FIRST = Decimal("527.67")
 TARIFF_G1A_SECOND = Decimal("576.74")
 TARIFF_G1_FIRST = Decimal("545.29")
@@ -135,19 +137,26 @@ _SURCHARGE_BY_REGION = {
 
 
 def tariff_of(group: Group, half: HalfYear) -> Decimal:
-    """Ставка группы на полугодие, руб. за тыс. м³."""
+    """Ставка группы на период года, руб. за тыс. м³."""
     return TARIFF_YEAR[group, half]
+
+
+def half_of(month: int) -> HalfYear:
+    """Период ставки на месяц. До октября — первая ставка года, с октября — вторая."""
+    if not 1 <= month <= 12:
+        raise ValueError(month)
+    if month < SECOND_PERIOD_MONTH:
+        return HalfYear.FIRST
+    return HalfYear.SECOND
 
 
 def surcharge_of(region: Region, month: int) -> Decimal:
     """Ставка спецнадбавки региона на месяц, руб. за тыс. м³.
 
-    Январь–сентябрь — первая ставка пары, октябрь–декабрь — вторая.
+    До октября — первая ставка пары, с октября — вторая.
     """
     january_september, october_december = _SURCHARGE_BY_REGION[region]
-    if not 1 <= month <= 12:
-        raise ValueError(month)
-    if month <= 9:
+    if half_of(month) is HalfYear.FIRST:
         return january_september
     return october_december
 
@@ -179,6 +188,29 @@ POINT_0422_BASE = Decimal("35501.70")
 POINT_0422_OVERLIMIT = Decimal("8837.84")
 POINT_0422_SURCHARGE = Decimal("9467.48")
 POINT_0422_NET = Decimal("53807.02")
+
+# План 7,200 — группа 7. В июле факт с января 10,063 переходит в группу 6.
+BALTIC_POINT_ID = "78-Т-8509.78-1-134455"
+BALTIC_NAME = "БАЛТИК ДЕВЕЛОПМЕНТ"
+BALTIC_PLAN = Decimal("7.200")
+BALTIC_JANUARY = Decimal("1.349")
+BALTIC_JANUARY_OVERLIMIT = Decimal("0.002")
+BALTIC_FEBRUARY = Decimal("1.274")
+BALTIC_MARCH = Decimal("1.444")
+BALTIC_APRIL = Decimal("1.442")
+BALTIC_MAY = Decimal("1.518")
+BALTIC_JUNE = Decimal("1.476")
+BALTIC_JULY = Decimal("1.560")
+BALTIC_YTD_JUNE = Decimal("8.503")
+BALTIC_YTD_JULY = Decimal("10.063")
+# Июль ещё на первой ставке года. База января без сверхлимита 0,002.
+BALTIC_JULY_BASE = Decimal("432.32")
+BALTIC_JULY_SURCHARGE = Decimal("400.58")
+BALTIC_JULY_NET = Decimal("832.90")
+# Суммы из счёта. 432,01 получается, если сверхлимит января 0,002 оставить в поправке.
+# 2 161,44 — объём июля на тариф группы 6 первой ставки плюс спецнадбавка города.
+BALTIC_INVOICE_TRANSPORT = Decimal("432.01")
+BALTIC_INVOICE_WITH_SURCHARGE = Decimal("2161.44")
 
 
 @dataclass(frozen=True)
