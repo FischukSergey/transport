@@ -26,6 +26,7 @@ dist/
 *.manifest
 
 # локальная база программы
+transport.database
 *.sqlite
 *.sqlite3
 *.db

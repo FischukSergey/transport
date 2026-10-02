@@ -8,7 +8,7 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -55,25 +55,34 @@ CREATE TABLE IF NOT EXISTS consumer (
     name TEXT NOT NULL,
     region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
     kind TEXT NOT NULL CHECK (kind IN ({_sql_in(_KINDS)})),
-    UNIQUE (code)
-);
-
-CREATE TABLE IF NOT EXISTS point (
-    id INTEGER PRIMARY KEY,
-    consumer_id INTEGER NOT NULL REFERENCES consumer (id) ON DELETE RESTRICT,
-    code TEXT NOT NULL,
-    UNIQUE (code)
+    inn TEXT,
+    created_on TEXT NOT NULL,
+    updated_on TEXT NOT NULL,
+    deleted_on TEXT,
+    UNIQUE (code),
+    UNIQUE (inn)
 );
 
 CREATE TABLE IF NOT EXISTS contract (
     id INTEGER PRIMARY KEY,
-    point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
-    service_start TEXT NOT NULL,
-    service_end TEXT NOT NULL,
-    group_adjustment_forbidden INTEGER NOT NULL CHECK (group_adjustment_forbidden IN (0, 1)),
-    new_consumer INTEGER NOT NULL CHECK (new_consumer IN (0, 1)),
-    one_off_works INTEGER NOT NULL CHECK (one_off_works IN (0, 1)),
-    UNIQUE (point_id, service_start)
+    consumer_id INTEGER NOT NULL REFERENCES consumer (id) ON DELETE RESTRICT,
+    number TEXT NOT NULL,
+    signed_on TEXT NOT NULL,
+    created_on TEXT NOT NULL,
+    updated_on TEXT NOT NULL,
+    deleted_on TEXT,
+    UNIQUE (number)
+);
+
+CREATE TABLE IF NOT EXISTS point (
+    id INTEGER PRIMARY KEY,
+    contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+    code TEXT NOT NULL,
+    address TEXT NOT NULL,
+    created_on TEXT NOT NULL,
+    updated_on TEXT NOT NULL,
+    deleted_on TEXT,
+    UNIQUE (code)
 );
 
 CREATE TABLE IF NOT EXISTS amendment (

@@ -12,6 +12,28 @@ RATE_ON_FIRST = date(2026, 1, 1)
 
 
 @dataclass(frozen=True)
+class LegacyParty:
+    region_code: str
+    region_name: str
+    consumer_code: str
+    consumer_name: str
+    point_code: str
+    service_start: date
+    address: str
+
+
+LEGACY_PARTY = LegacyParty(
+    "78",
+    "Город",
+    "c-78",
+    "Завод",
+    "78-Т-1",
+    date(2026, 3, 1),
+    "",
+)
+
+
+@dataclass(frozen=True)
 class TariffRow:
     group: Group
     effective_from: date

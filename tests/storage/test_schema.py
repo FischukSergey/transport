@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.storage.data import LEGACY_PARTY, RATE_ON_FIRST
 
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
@@ -11,6 +12,7 @@ from transport.storage.database import SchemaVersionError, open_database
 from transport.storage.repository import (
     save_annual_plan,
     save_consumer,
+    save_contract,
     save_point,
     save_point_group,
     save_region,
@@ -26,7 +28,17 @@ def test_empty_file_receives_schema(tmp_path: Path) -> None:
         assert connection.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
         assert _tables(connection) == TABLES
         assert "volume" not in _columns(connection, "contract")
-        assert _columns(connection, "point") == {"id", "consumer_id", "code"}
+        assert "group_adjustment_forbidden" not in _columns(connection, "contract")
+        assert _columns(connection, "point") == {
+            "id",
+            "contract_id",
+            "code",
+            "address",
+            "created_on",
+            "updated_on",
+            "deleted_on",
+        }
+        assert "inn" in _columns(connection, "consumer")
         assert "effective_from" in _columns(connection, "point_group")
         assert "month" in _columns(connection, "monthly_plan")
     finally:
@@ -126,6 +138,73 @@ def test_version_1_keeps_one_confirmation_per_month(tmp_path: Path) -> None:
         assert connection.execute("SELECT effective_from FROM tariff").fetchall() == [
             ("2026-01-01",)
         ]
+    finally:
+        connection.close()
+
+
+def test_version_3_moves_point_under_contract(tmp_path: Path) -> None:
+    case = LEGACY_PARTY
+    path = tmp_path / "v3.sqlite"
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        f"""
+        CREATE TABLE region (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            UNIQUE (code)
+        );
+        CREATE TABLE consumer (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            region_id INTEGER NOT NULL REFERENCES region (id),
+            kind TEXT NOT NULL,
+            UNIQUE (code)
+        );
+        CREATE TABLE point (
+            id INTEGER PRIMARY KEY,
+            consumer_id INTEGER NOT NULL REFERENCES consumer (id),
+            code TEXT NOT NULL,
+            UNIQUE (code)
+        );
+        CREATE TABLE contract (
+            id INTEGER PRIMARY KEY,
+            point_id INTEGER NOT NULL REFERENCES point (id),
+            service_start TEXT NOT NULL,
+            service_end TEXT NOT NULL,
+            group_adjustment_forbidden INTEGER NOT NULL,
+            new_consumer INTEGER NOT NULL,
+            one_off_works INTEGER NOT NULL
+        );
+        INSERT INTO region (id, code, name) VALUES (1, '{case.region_code}', '{case.region_name}');
+        INSERT INTO consumer (id, code, name, region_id, kind)
+            VALUES (1, '{case.consumer_code}', '{case.consumer_name}', 1, 'industrial');
+        INSERT INTO point (id, consumer_id, code) VALUES (1, 1, '{case.point_code}');
+        INSERT INTO contract (
+            id, point_id, service_start, service_end,
+            group_adjustment_forbidden, new_consumer, one_off_works
+        ) VALUES (1, 1, '{case.service_start.isoformat()}', '{case.service_start.isoformat()}', 0, 0, 0);
+        """
+    )
+    raw.execute("PRAGMA user_version = 3")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    try:
+        number = f"{case.point_code}#{case.service_start.isoformat()}"
+        row = connection.execute(
+            """
+            SELECT contract.number, contract.signed_on, point.address, point.contract_id
+            FROM point
+            JOIN contract ON contract.id = point.contract_id
+            """
+        ).fetchone()
+        assert row[0] == number
+        assert row[1] == case.service_start.isoformat()
+        assert row[2] == case.address
+        assert "group_adjustment_forbidden" not in _columns(connection, "contract")
     finally:
         connection.close()
 
@@ -234,8 +313,23 @@ def _point(connection: sqlite3.Connection, region_code: str = "47") -> int:
         name="Завод",
         region_id=region_id,
         kind=ConsumerKind.INDUSTRIAL,
+        inn=None,
+        on=RATE_ON_FIRST,
     )
-    return save_point(connection, consumer_id=consumer_id, code=f"{region_code}-Т-1")
+    contract_id = save_contract(
+        connection,
+        consumer_id=consumer_id,
+        number=f"д-{region_code}",
+        signed_on=RATE_ON_FIRST,
+        on=RATE_ON_FIRST,
+    )
+    return save_point(
+        connection,
+        contract_id=contract_id,
+        code=f"{region_code}-Т-1",
+        address="адрес",
+        on=RATE_ON_FIRST,
+    )
 
 
 def _tables(connection: sqlite3.Connection) -> set[str]:

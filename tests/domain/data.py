@@ -2,6 +2,27 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import IntEnum, StrEnum
 
+from transport.application.sample import (
+    SURCHARGE_CITY_JANUARY_SEPTEMBER,
+    SURCHARGE_CITY_OCTOBER_DECEMBER,
+    SURCHARGE_OBLAST,
+    TARIFF_G1_FIRST,
+    TARIFF_G1_SECOND,
+    TARIFF_G1A_FIRST,
+    TARIFF_G1A_SECOND,
+    TARIFF_G2_FIRST,
+    TARIFF_G2_SECOND,
+    TARIFF_G3_FIRST,
+    TARIFF_G3_SECOND,
+    TARIFF_G4_FIRST,
+    TARIFF_G4_SECOND,
+    TARIFF_G5_FIRST,
+    TARIFF_G5_SECOND,
+    TARIFF_G6_FIRST,
+    TARIFF_G6_SECOND,
+    TARIFF_G7_FIRST,
+    TARIFF_G7_SECOND,
+)
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 from transport.parameters import (
@@ -88,24 +109,8 @@ OCTOBER = 10
 DECEMBER = 12
 
 
-# Руб. за тыс. м³, два знака. В текущем году вторая ставка действует с 1 октября.
+# Вторая ставка года действует с 1 октября. Суммы — в application.sample.
 SECOND_PERIOD_MONTH = 10
-TARIFF_G1A_FIRST = Decimal("527.67")
-TARIFF_G1A_SECOND = Decimal("576.74")
-TARIFF_G1_FIRST = Decimal("545.29")
-TARIFF_G1_SECOND = Decimal("596.00")
-TARIFF_G2_FIRST = Decimal("573.58")
-TARIFF_G2_SECOND = Decimal("626.92")
-TARIFF_G3_FIRST = Decimal("816.32")
-TARIFF_G3_SECOND = Decimal("892.24")
-TARIFF_G4_FIRST = Decimal("1116.53")
-TARIFF_G4_SECOND = Decimal("1220.37")
-TARIFF_G5_FIRST = Decimal("1122.69")
-TARIFF_G5_SECOND = Decimal("1227.10")
-TARIFF_G6_FIRST = Decimal("1128.76")
-TARIFF_G6_SECOND = Decimal("1233.73")
-TARIFF_G7_FIRST = Decimal("1285.04")
-TARIFF_G7_SECOND = Decimal("1404.55")
 
 TARIFF_YEAR: dict[tuple[Group, HalfYear], Decimal] = {
     (Group.G1A, HalfYear.FIRST): TARIFF_G1A_FIRST,
@@ -126,10 +131,7 @@ TARIFF_YEAR: dict[tuple[Group, HalfYear], Decimal] = {
     (Group.G7, HalfYear.SECOND): TARIFF_G7_SECOND,
 }
 
-# Спецнадбавка руб. за тыс. м³. У города и области ставка одна на все группы.
-SURCHARGE_CITY_JANUARY_SEPTEMBER = Decimal("256.78")
-SURCHARGE_CITY_OCTOBER_DECEMBER = Decimal("419.78")
-SURCHARGE_OBLAST = Decimal("374.50")
+# У города и области ставка одна на все группы. Суммы — в application.sample.
 _SURCHARGE_BY_REGION = {
     Region.CITY: (SURCHARGE_CITY_JANUARY_SEPTEMBER, SURCHARGE_CITY_OCTOBER_DECEMBER),
     Region.OBLAST: (SURCHARGE_OBLAST, SURCHARGE_OBLAST),

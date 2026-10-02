@@ -1,7 +1,9 @@
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from transport.domain.group import Group
+from transport.domain.month import ConsumerKind
 from transport.storage.schema import SCHEMA, SCHEMA_VERSION
 
 
@@ -31,6 +33,7 @@ def open_database(path: Path | str) -> sqlite3.Connection:
         if version < SCHEMA_VERSION:
             _upgrade(connection, version)
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.create_function("contains", 2, _contains, deterministic=True)
     except Exception:
         connection.close()
         raise
@@ -177,7 +180,140 @@ def _group_list() -> str:
     return ", ".join(f"'{group.value}'" for group in Group)
 
 
-_STEPS = {2: _to_version_2, 3: _to_version_3}
+def _to_version_4(connection: sqlite3.Connection) -> None:
+    """Переносит точку под договор потребителя.
+
+    Договор хранит номер и одну дату. Признаки группы с договора снимаются.
+    У точки появляется адрес. Даты появления и правки ставятся днём перехода.
+    """
+    connection.execute("PRAGMA foreign_keys = OFF")
+    if _table_exists(connection, "point") and _has_column(connection, "point", "consumer_id"):
+        _move_points_under_contracts(connection)
+    elif _table_exists(connection, "region") and not _table_exists(connection, "consumer"):
+        _create_party_tables(connection)
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
+def _move_points_under_contracts(connection: sqlite3.Connection) -> None:
+    stamp = datetime.now().astimezone().date().isoformat()
+    consumers = connection.execute(
+        "SELECT id, code, name, region_id, kind FROM consumer"
+    ).fetchall()
+    points = connection.execute("SELECT id, consumer_id, code FROM point").fetchall()
+    contracts = connection.execute(
+        "SELECT id, point_id, service_start FROM contract ORDER BY service_start"
+    ).fetchall()
+    connection.execute("DROP TABLE contract")
+    connection.execute("DROP TABLE point")
+    connection.execute("DROP TABLE consumer")
+    _create_party_tables(connection)
+    connection.executemany(
+        """
+        INSERT INTO consumer (
+            id, code, name, region_id, kind, inn, created_on, updated_on
+        )
+        VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+        """,
+        [(row[0], row[1], row[2], row[3], row[4], stamp, stamp) for row in consumers],
+    )
+    point_code = {int(row[0]): str(row[2]) for row in points}
+    point_consumer = {int(row[0]): int(row[1]) for row in points}
+    chosen: dict[int, int] = {}
+    contract_rows = []
+    for contract_id, point_id, service_start in contracts:
+        point_id = int(point_id)
+        number = f"{point_code[point_id]}#{service_start}"
+        contract_rows.append(
+            (int(contract_id), point_consumer[point_id], number, service_start, stamp, stamp)
+        )
+        chosen[point_id] = int(contract_id)
+    connection.executemany(
+        """
+        INSERT INTO contract (
+            id, consumer_id, number, signed_on, created_on, updated_on
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        contract_rows,
+    )
+    point_rows = []
+    for point_id, consumer_id, code in points:
+        point_id = int(point_id)
+        contract_id = chosen.get(point_id)
+        if contract_id is None:
+            cursor = connection.execute(
+                """
+                INSERT INTO contract (consumer_id, number, signed_on, created_on, updated_on)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (int(consumer_id), str(code), stamp, stamp, stamp),
+            )
+            contract_id = int(cursor.lastrowid)
+        point_rows.append((point_id, contract_id, str(code), "", stamp, stamp))
+    connection.executemany(
+        """
+        INSERT INTO point (id, contract_id, code, address, created_on, updated_on)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        point_rows,
+    )
+
+
+def _create_party_tables(connection: sqlite3.Connection) -> None:
+    kinds = ", ".join(f"'{kind.value}'" for kind in ConsumerKind)
+    connection.executescript(
+        f"""
+        CREATE TABLE consumer (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL,
+            region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
+            kind TEXT NOT NULL CHECK (kind IN ({kinds})),
+            inn TEXT,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT,
+            UNIQUE (code),
+            UNIQUE (inn)
+        );
+        CREATE TABLE contract (
+            id INTEGER PRIMARY KEY,
+            consumer_id INTEGER NOT NULL REFERENCES consumer (id) ON DELETE RESTRICT,
+            number TEXT NOT NULL,
+            signed_on TEXT NOT NULL,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT,
+            UNIQUE (number)
+        );
+        CREATE TABLE point (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            code TEXT NOT NULL,
+            address TEXT NOT NULL,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT,
+            UNIQUE (code)
+        );
+        """
+    )
+
+
+def _has_column(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+_STEPS = {2: _to_version_2, 3: _to_version_3, 4: _to_version_4}
+
+
+def _contains(value: object, fragment: object) -> int:
+    needle = "" if fragment is None else str(fragment).casefold()
+    if needle == "":
+        return 1
+    haystack = "" if value is None else str(value).casefold()
+    return int(needle in haystack)
 
 
 def _user_version(connection: sqlite3.Connection) -> int:
