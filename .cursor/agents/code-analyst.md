@@ -24,6 +24,7 @@ is_background: true
 | `.cursor/rules/domain.mdc` | Инварианты расчёта |
 | `.cursor/rules/python-idioms.mdc` | Python 3.13 |
 | `.cursor/rules/lint.mdc` | `task lint`, `task test` |
+| `.cursor/rules/tests.mdc` | Границы тестов отдельно от тела |
 | `Taskfile.yml` | цели fmt, lint, test, run |
 | `.cursor/skills/transport/SKILL.md` | Сводка реализации |
 
