@@ -23,7 +23,32 @@ jobs:
         with:
           version: 3.x
 
+      - name: Install Qt libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libglib2.0-0 \
+            libgl1 \
+            libglx0 \
+            libopengl0 \
+            libfontconfig1 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libdbus-1-3 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xfixes0 \
+            libxcb-xinerama0
+
       - name: Lint and test
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: |
           python3 -m venv .venv
           source .venv/bin/activate
