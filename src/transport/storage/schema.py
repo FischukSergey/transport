@@ -8,7 +8,8 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-SCHEMA_VERSION = 4
+# 5 — годовой и помесячный план хранят договор, годовой план ещё регион и группу из файла.
+SCHEMA_VERSION = 5
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -96,19 +97,25 @@ CREATE TABLE IF NOT EXISTS amendment (
 
 CREATE TABLE IF NOT EXISTS annual_plan (
     id INTEGER PRIMARY KEY,
+    contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
     point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+    region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
     year INTEGER NOT NULL,
     volume TEXT NOT NULL,
-    UNIQUE (point_id, year)
+    stated_group TEXT CHECK (
+        stated_group IS NULL OR stated_group IN ({_sql_in(_GROUPS)})
+    ),
+    UNIQUE (contract_id, point_id, year)
 );
 
 CREATE TABLE IF NOT EXISTS monthly_plan (
     id INTEGER PRIMARY KEY,
+    contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
     point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
     year INTEGER NOT NULL,
     month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
     volume TEXT NOT NULL,
-    UNIQUE (point_id, year, month)
+    UNIQUE (contract_id, point_id, year, month)
 );
 
 CREATE TABLE IF NOT EXISTS point_group (

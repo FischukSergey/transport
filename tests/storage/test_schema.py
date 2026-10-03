@@ -4,7 +4,14 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from tests.storage.data import LEGACY_PARTY, RATE_ON_FIRST
+from tests.storage.data import (
+    LEGACY_MONTH_VOLUME,
+    LEGACY_PARTY,
+    LEGACY_PLAN_MONTH,
+    LEGACY_PLAN_VOLUME,
+    PREVIOUS_SCHEMA,
+    RATE_ON_FIRST,
+)
 
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
@@ -209,6 +216,74 @@ def test_version_3_moves_point_under_contract(tmp_path: Path) -> None:
         connection.close()
 
 
+def test_version_4_plan_keeps_volume_and_gains_contract(tmp_path: Path) -> None:
+    path = tmp_path / "v4.sqlite"
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        """
+        CREATE TABLE region (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE consumer (
+            id INTEGER PRIMARY KEY,
+            region_id INTEGER NOT NULL REFERENCES region (id)
+        );
+        CREATE TABLE contract (
+            id INTEGER PRIMARY KEY,
+            consumer_id INTEGER NOT NULL REFERENCES consumer (id)
+        );
+        CREATE TABLE point (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id)
+        );
+        CREATE TABLE annual_plan (
+            id INTEGER PRIMARY KEY,
+            point_id INTEGER NOT NULL REFERENCES point (id),
+            year INTEGER NOT NULL,
+            volume TEXT NOT NULL
+        );
+        CREATE TABLE monthly_plan (
+            id INTEGER PRIMARY KEY,
+            point_id INTEGER NOT NULL REFERENCES point (id),
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            volume TEXT NOT NULL
+        );
+        """
+    )
+    raw.execute(
+        "INSERT INTO region (id, code, name) VALUES (1, ?, ?)",
+        (LEGACY_PARTY.region_code, LEGACY_PARTY.region_name),
+    )
+    raw.execute("INSERT INTO consumer (id, region_id) VALUES (1, 1)")
+    raw.execute("INSERT INTO contract (id, consumer_id) VALUES (1, 1)")
+    raw.execute("INSERT INTO point (id, contract_id) VALUES (1, 1)")
+    raw.execute(
+        "INSERT INTO annual_plan (point_id, year, volume) VALUES (1, ?, ?)",
+        (RATE_ON_FIRST.year, LEGACY_PLAN_VOLUME),
+    )
+    raw.execute(
+        "INSERT INTO monthly_plan (point_id, year, month, volume) VALUES (1, ?, ?, ?)",
+        (RATE_ON_FIRST.year, LEGACY_PLAN_MONTH, LEGACY_MONTH_VOLUME),
+    )
+    raw.execute(f"PRAGMA user_version = {PREVIOUS_SCHEMA}")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    try:
+        annual = connection.execute(
+            "SELECT contract_id, region_id, volume, stated_group FROM annual_plan"
+        ).fetchone()
+        monthly = connection.execute("SELECT contract_id, volume FROM monthly_plan").fetchone()
+        assert annual == (1, 1, LEGACY_PLAN_VOLUME, None)
+        assert monthly == (1, LEGACY_MONTH_VOLUME)
+    finally:
+        connection.close()
+
+
 def test_database_file_is_gitignored() -> None:
     text = Path(".gitignore").read_text(encoding="utf-8")
     assert "*.sqlite" in text
@@ -222,8 +297,29 @@ def test_resave_updates_current_row(tmp_path: Path) -> None:
         first = save_region(connection, code="78", name="Город")
         second = save_region(connection, code="78", name="Санкт-Петербург")
         point_id = _point(connection, region_code="78")
-        save_annual_plan(connection, point_id=point_id, year=2026, volume=Decimal("400.000"))
-        save_annual_plan(connection, point_id=point_id, year=2026, volume=Decimal("160.000"))
+        contract_id = connection.execute(
+            "SELECT contract_id FROM point WHERE id = ?",
+            (point_id,),
+        ).fetchone()
+        assert contract_id is not None
+        save_annual_plan(
+            connection,
+            contract_id=int(contract_id[0]),
+            point_id=point_id,
+            region_id=first,
+            year=2026,
+            volume=Decimal("400.000"),
+            stated_group=None,
+        )
+        save_annual_plan(
+            connection,
+            contract_id=int(contract_id[0]),
+            point_id=point_id,
+            region_id=first,
+            year=2026,
+            volume=Decimal("160.000"),
+            stated_group=None,
+        )
         assert first == second
         assert connection.execute("SELECT COUNT(*) FROM region").fetchone() == (1,)
         assert connection.execute("SELECT name FROM region").fetchone() == ("Санкт-Петербург",)

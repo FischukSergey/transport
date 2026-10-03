@@ -1,0 +1,195 @@
+"""Загрузка годового плана в справочники и таблицы плана.
+
+Точка одна на код. Объём каждого договора пишется отдельно.
+Группа точки — от суммы этих объёмов. Расчёт месяца не вызывается.
+"""
+
+import sqlite3
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+
+from transport.application.sample import CITY_CODE, OBLAST_CODE
+from transport.domain.group import Group, group_of
+from transport.ingest.annual import PlanLine, read_annual_plan
+from transport.parameters import GROUP_ABOVE, GROUP_UPPER_INCLUSIVE
+from transport.storage.repository import (
+    add_consumer,
+    add_contract,
+    add_point,
+    annual_volumes,
+    consumer_id_by_inn,
+    contract_by_number,
+    point_id_by_code,
+    region_id_by_code,
+    replace_remarks,
+    save_annual_plan,
+    save_monthly_plan,
+    save_point_group,
+    save_region,
+)
+
+# Код правила, когда группа файла не совпала с суммой объёмов точки.
+GROUP_MISMATCH = "group_mismatch"
+PLAN_ROW = "plan_row"
+
+_REGION_NAMES = {
+    CITY_CODE: "Санкт-Петербург",
+    OBLAST_CODE: "Ленинградская область",
+}
+
+
+class PlanLoad:
+    def __init__(
+        self,
+        year: int,
+        lines: int,
+        mismatches: tuple[tuple[str, Group, Group], ...],
+    ) -> None:
+        self.year = year
+        self.lines = lines
+        self.mismatches = mismatches
+
+
+def load_annual_plan(connection: sqlite3.Connection, path: Path | str) -> PlanLoad:
+    """Пишет потребителей, договоры, точки и план. Прогон не создаёт.
+
+    Нет потребителя — создаёт его и назначает код. Нет договора — создаёт договор
+    на 1 января года плана: даты договора в файле нет. Нет точки — создаёт точку
+    этого договора. Уже существующую точку к другому договору не переносит.
+    """
+    book = read_annual_plan(path)
+    regions = _regions(connection)
+    on = date(book.year, 1, 1)
+    written: list[PlanLine] = []
+    skipped: list[tuple[int, str]] = []
+    for line in book.lines:
+        reason = _write_line(connection, line, book.year, on, regions)
+        if reason is None:
+            written.append(line)
+        else:
+            skipped.append((line.file_row, reason))
+    mismatches = _groups(connection, book.year, written)
+    replace_remarks(
+        connection,
+        rule_code=PLAN_ROW,
+        entity=None,
+        rows=[(issue.file_row, issue.text) for issue in book.issues] + skipped,
+    )
+    connection.commit()
+    return PlanLoad(book.year, len(written), tuple(mismatches))
+
+
+def _regions(connection: sqlite3.Connection) -> dict[str, int]:
+    found: dict[str, int] = {}
+    for code, name in _REGION_NAMES.items():
+        region_id = region_id_by_code(connection, code)
+        if region_id is None:
+            region_id = save_region(connection, code=code, name=name)
+        found[code] = region_id
+    return found
+
+
+def _write_line(
+    connection: sqlite3.Connection,
+    line: PlanLine,
+    year: int,
+    on: date,
+    regions: dict[str, int],
+) -> str | None:
+    consumer_id = consumer_id_by_inn(connection, line.inn)
+    if consumer_id is None:
+        add_consumer(
+            connection,
+            name=line.name,
+            region_id=regions[line.region_code],
+            kind=line.kind,
+            inn=line.inn,
+            on=on,
+        )
+        consumer_id = consumer_id_by_inn(connection, line.inn)
+    if consumer_id is None:
+        return "Потребитель не записан."
+    contract = contract_by_number(connection, line.contract)
+    if contract is None:
+        add_contract(
+            connection,
+            consumer_id=consumer_id,
+            number=line.contract,
+            signed_on=on,
+            on=on,
+        )
+        contract = contract_by_number(connection, line.contract)
+    if contract is None or contract[1] != consumer_id:
+        return "Договор уже принадлежит другому потребителю."
+    contract_id = contract[0]
+    point_id = point_id_by_code(connection, line.point)
+    if point_id is None:
+        add_point(
+            connection,
+            contract_id=contract_id,
+            code=line.point,
+            address=line.address,
+            on=on,
+        )
+        point_id = point_id_by_code(connection, line.point)
+    if point_id is None:
+        return "Точка не записана."
+    save_annual_plan(
+        connection,
+        contract_id=contract_id,
+        point_id=point_id,
+        region_id=regions[line.region_code],
+        year=year,
+        volume=line.volume,
+        stated_group=line.stated,
+    )
+    for month, volume in enumerate(line.months, start=1):
+        save_monthly_plan(
+            connection,
+            contract_id=contract_id,
+            point_id=point_id,
+            year=year,
+            month=month,
+            volume=volume,
+        )
+    return None
+
+
+def _groups(
+    connection: sqlite3.Connection,
+    year: int,
+    lines: list[PlanLine],
+) -> list[tuple[str, Group, Group]]:
+    by_point: dict[str, list[PlanLine]] = {}
+    for line in lines:
+        by_point.setdefault(line.point, []).append(line)
+    mismatches: list[tuple[str, Group, Group]] = []
+    for code, group_lines in by_point.items():
+        point_id = point_id_by_code(connection, code)
+        if point_id is None:
+            continue
+        total = sum(
+            (Decimal(volume) for volume in annual_volumes(connection, point_id, year)),
+            Decimal(0),
+        )
+        calculated = group_of(total, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE)
+        save_point_group(
+            connection,
+            point_id=point_id,
+            effective_from=date(year, 1, 1),
+            group=calculated,
+        )
+        remarks: list[tuple[int, str]] = []
+        for line in group_lines:
+            if line.stated == calculated:
+                continue
+            remarks.append(
+                (
+                    line.file_row,
+                    f"В файле группа {line.stated.value}, по сумме объёмов точки группа {calculated.value}.",
+                )
+            )
+            mismatches.append((code, line.stated, calculated))
+        replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=code, rows=remarks)
+    return mismatches

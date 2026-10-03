@@ -22,6 +22,13 @@ class LegacyParty:
     address: str
 
 
+# Номер схемы до договора в плане.
+PREVIOUS_SCHEMA = 4
+LEGACY_PLAN_VOLUME = "160.000"
+LEGACY_MONTH_VOLUME = "10.000"
+LEGACY_PLAN_MONTH = 1
+
+
 LEGACY_PARTY = LegacyParty(
     "78",
     "Город",
