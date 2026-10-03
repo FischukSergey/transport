@@ -4,6 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from tests.ingest.fact_data import FACT_SCHEMA, LEGACY_FACT_MONTH, LEGACY_FACT_VOLUME, YEAR
 from tests.storage.data import (
     LEGACY_MONTH_VOLUME,
     LEGACY_PARTY,
@@ -284,6 +285,48 @@ def test_version_4_plan_keeps_volume_and_gains_contract(tmp_path: Path) -> None:
         connection.close()
 
 
+def test_version_5_fact_keeps_volume_and_gains_contract(tmp_path: Path) -> None:
+    path = tmp_path / "fact-v5.sqlite"
+    raw = sqlite3.connect(path)
+    raw.execute("CREATE TABLE contract (id INTEGER PRIMARY KEY)")
+    raw.execute("CREATE TABLE point (id INTEGER PRIMARY KEY, contract_id INTEGER NOT NULL)")
+    raw.execute(
+        """
+        CREATE TABLE monthly_fact (
+            id INTEGER PRIMARY KEY,
+            point_id INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            row_kind TEXT NOT NULL,
+            volume TEXT,
+            overlimit_110 TEXT,
+            overlimit_150 TEXT,
+            kind TEXT
+        )
+        """
+    )
+    raw.execute("INSERT INTO contract (id) VALUES (1)")
+    raw.execute("INSERT INTO point (id, contract_id) VALUES (1, 1)")
+    raw.execute(
+        """
+        INSERT INTO monthly_fact (point_id, year, month, row_kind, volume)
+        VALUES (1, ?, ?, 'opening', ?)
+        """,
+        (YEAR, LEGACY_FACT_MONTH, LEGACY_FACT_VOLUME),
+    )
+    raw.execute(f"PRAGMA user_version = {FACT_SCHEMA}")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    try:
+        row = connection.execute("SELECT contract_id, volume FROM monthly_fact").fetchone()
+        assert row == (1, LEGACY_FACT_VOLUME)
+        assert "fact_discrepancy" in _tables(connection)
+    finally:
+        connection.close()
+
+
 def test_database_file_is_gitignored() -> None:
     text = Path(".gitignore").read_text(encoding="utf-8")
     assert "*.sqlite" in text
@@ -375,23 +418,29 @@ def test_opening_fact_belongs_to_point(tmp_path: Path) -> None:
     connection = open_database(tmp_path / "fact.sqlite")
     try:
         point_id = _point(connection)
+        contract_id = connection.execute(
+            "SELECT contract_id FROM point WHERE id = ?",
+            (point_id,),
+        ).fetchone()
+        assert contract_id is not None
         assert "consumer_id" not in _columns(connection, "monthly_fact")
         connection.execute(
             """
-            INSERT INTO monthly_fact (point_id, year, month, row_kind, volume)
-            VALUES (?, 2026, 3, 'opening', '10.000')
+            INSERT INTO monthly_fact (contract_id, point_id, year, month, row_kind, volume)
+            VALUES (?, ?, 2026, 3, 'opening', '10.000')
             """,
-            (point_id,),
+            (int(contract_id[0]), point_id),
         )
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 """
                 INSERT INTO monthly_fact (
-                    point_id, year, month, row_kind, volume, overlimit_110, overlimit_150, kind
+                    contract_id, point_id, year, month, row_kind,
+                    volume, overlimit_110, overlimit_150, kind
                 )
-                VALUES (?, 2026, 3, 'opening', '10.000', '1.000', NULL, NULL)
+                VALUES (?, ?, 2026, 3, 'opening', '10.000', '1.000', NULL, NULL)
                 """,
-                (point_id,),
+                (int(contract_id[0]), point_id),
             )
     finally:
         connection.close()

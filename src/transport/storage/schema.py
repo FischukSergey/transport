@@ -8,8 +8,8 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-# 5 — годовой и помесячный план хранят договор, годовой план ещё регион и группу из файла.
-SCHEMA_VERSION = 5
+# 7 — загрузка факта пишет точки, у которых сумма с января меняет группу.
+SCHEMA_VERSION = 7
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -27,6 +27,8 @@ TABLES = frozenset(
         "tariff",
         "surcharge",
         "monthly_fact",
+        "fact_discrepancy",
+        "group_transition",
         "run",
         "result_line",
         "remark",
@@ -146,6 +148,7 @@ CREATE TABLE IF NOT EXISTS surcharge (
 
 CREATE TABLE IF NOT EXISTS monthly_fact (
     id INTEGER PRIMARY KEY,
+    contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
     point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
     year INTEGER NOT NULL,
     month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
@@ -170,7 +173,47 @@ CREATE TABLE IF NOT EXISTS monthly_fact (
             AND kind IS NULL
         )
     ),
-    UNIQUE (point_id, year, month, row_kind)
+    UNIQUE (contract_id, point_id, year, month, row_kind)
+);
+
+-- Ручной акцепт отдельной процедурой. Загрузка факта карточки по этим строкам не создаёт.
+CREATE TABLE IF NOT EXISTS fact_discrepancy (
+    id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+    rule_code TEXT NOT NULL CHECK (
+        rule_code IN (
+            'new_consumer',
+            'new_contract',
+            'new_point',
+            'plan_without_fact',
+            'name_mismatch',
+            'address_mismatch'
+        )
+    ),
+    consumer_name TEXT,
+    contract_number TEXT,
+    point_code TEXT,
+    address TEXT,
+    directory_text TEXT,
+    volume TEXT,
+    overlimit_110 TEXT,
+    overlimit_150 TEXT,
+    file_row INTEGER,
+    message TEXT NOT NULL
+);
+
+-- Информационный список загрузки. Группу в point_group эти строки не меняют.
+CREATE TABLE IF NOT EXISTS group_transition (
+    id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+    point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+    recorded_group TEXT NOT NULL CHECK (recorded_group IN ({_sql_in(_GROUPS)})),
+    calculated_group TEXT NOT NULL CHECK (calculated_group IN ({_sql_in(_GROUPS)})),
+    volume TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('cheaper', 'dearer')),
+    UNIQUE (year, month, point_id)
 );
 
 CREATE TABLE IF NOT EXISTS run (

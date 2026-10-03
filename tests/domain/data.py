@@ -34,6 +34,7 @@ from transport.parameters import (
     BOUND_G6,
     BOUND_G7,
     GROUP_ABOVE,
+    OVERLIMIT_DEDUCT,
 )
 
 # Объёмы сценариев — тыс. м³. Границы шкалы берутся из параметров методики.
@@ -89,6 +90,14 @@ GROUP_BOUNDARIES: tuple[tuple[Decimal, Group], ...] = (
     (BOUND_G2 + VOLUME_STEP, Group.G1),
     (BOUND_G1, Group.G1),
     (BOUND_G1 + VOLUME_STEP, GROUP_ABOVE),
+)
+
+# Факт, сверхлимит и объём сверки после вычета не больше 10 %.
+_DEDUCTED = BOUND_G6 - BOUND_G6 * OVERLIMIT_DEDUCT
+GROUP_CHECK_VOLUMES: tuple[tuple[Decimal, Decimal, Decimal], ...] = (
+    (BOUND_G7 + VOLUME_STEP, VOLUME_STEP, BOUND_G7),
+    (BOUND_G7 + VOLUME_STEP, VOLUME_ZERO, BOUND_G7 + VOLUME_STEP),
+    (BOUND_G6, BOUND_G6, _DEDUCTED),
 )
 
 
