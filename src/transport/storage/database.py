@@ -305,7 +305,226 @@ def _has_column(connection: sqlite3.Connection, table: str, column: str) -> bool
     return any(row[1] == column for row in rows)
 
 
-_STEPS = {2: _to_version_2, 3: _to_version_3, 4: _to_version_4}
+def _to_version_5(connection: sqlite3.Connection) -> None:
+    """Добавляет договор в план. Годовой план получает ещё регион и группу из файла.
+
+    Уже записанный объём остаётся. Договор и регион берутся у точки, как она лежала в схеме 4.
+    """
+    connection.execute("PRAGMA foreign_keys = OFF")
+    _rebuild_annual_plan(connection)
+    _rebuild_monthly_plan(connection)
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
+def _rebuild_annual_plan(connection: sqlite3.Connection) -> None:
+    if _has_column(connection, "annual_plan", "contract_id"):
+        return
+    groups = _group_list()
+    connection.execute(
+        f"""
+        CREATE TABLE annual_plan_v5 (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+            region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
+            year INTEGER NOT NULL,
+            volume TEXT NOT NULL,
+            stated_group TEXT CHECK (
+                stated_group IS NULL OR stated_group IN ({groups})
+            ),
+            UNIQUE (contract_id, point_id, year)
+        )
+        """
+    )
+    if _table_exists(connection, "annual_plan"):
+        connection.execute(
+            """
+            INSERT INTO annual_plan_v5 (
+                id, contract_id, point_id, region_id, year, volume
+            )
+            SELECT
+                annual_plan.id,
+                point.contract_id,
+                annual_plan.point_id,
+                consumer.region_id,
+                annual_plan.year,
+                annual_plan.volume
+            FROM annual_plan
+            JOIN point ON point.id = annual_plan.point_id
+            JOIN contract ON contract.id = point.contract_id
+            JOIN consumer ON consumer.id = contract.consumer_id
+            """
+        )
+        connection.execute("DROP TABLE annual_plan")
+    connection.execute("ALTER TABLE annual_plan_v5 RENAME TO annual_plan")
+
+
+def _rebuild_monthly_plan(connection: sqlite3.Connection) -> None:
+    if _has_column(connection, "monthly_plan", "contract_id"):
+        return
+    connection.execute(
+        """
+        CREATE TABLE monthly_plan_v5 (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            volume TEXT NOT NULL,
+            UNIQUE (contract_id, point_id, year, month)
+        )
+        """
+    )
+    if _table_exists(connection, "monthly_plan"):
+        connection.execute(
+            """
+            INSERT INTO monthly_plan_v5 (id, contract_id, point_id, year, month, volume)
+            SELECT
+                monthly_plan.id,
+                point.contract_id,
+                monthly_plan.point_id,
+                monthly_plan.year,
+                monthly_plan.month,
+                monthly_plan.volume
+            FROM monthly_plan
+            JOIN point ON point.id = monthly_plan.point_id
+            """
+        )
+        connection.execute("DROP TABLE monthly_plan")
+    connection.execute("ALTER TABLE monthly_plan_v5 RENAME TO monthly_plan")
+
+
+def _to_version_6(connection: sqlite3.Connection) -> None:
+    """Добавляет договор в факт месяца и таблицу расхождений загрузки.
+
+    Уже записанный факт остаётся. Договор берётся у точки.
+    """
+    connection.execute("PRAGMA foreign_keys = OFF")
+    _rebuild_monthly_fact(connection)
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fact_discrepancy (
+            id INTEGER PRIMARY KEY,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            rule_code TEXT NOT NULL CHECK (
+                rule_code IN (
+                    'new_consumer',
+                    'new_contract',
+                    'new_point',
+                    'plan_without_fact',
+                    'name_mismatch',
+                    'address_mismatch'
+                )
+            ),
+            consumer_name TEXT,
+            contract_number TEXT,
+            point_code TEXT,
+            address TEXT,
+            directory_text TEXT,
+            volume TEXT,
+            overlimit_110 TEXT,
+            overlimit_150 TEXT,
+            file_row INTEGER,
+            message TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _rebuild_monthly_fact(connection: sqlite3.Connection) -> None:
+    if _table_exists(connection, "monthly_fact") and _has_column(
+        connection, "monthly_fact", "contract_id"
+    ):
+        return
+    connection.execute(
+        """
+        CREATE TABLE monthly_fact_v6 (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            row_kind TEXT NOT NULL CHECK (row_kind IN ('month', 'opening')),
+            volume TEXT,
+            overlimit_110 TEXT,
+            overlimit_150 TEXT,
+            kind TEXT CHECK (kind IS NULL OR kind IN ('industrial', 'communal')),
+            CHECK (
+                (
+                    row_kind = 'month'
+                    AND volume IS NOT NULL
+                    AND overlimit_110 IS NOT NULL
+                    AND overlimit_150 IS NOT NULL
+                    AND kind IS NOT NULL
+                )
+                OR (
+                    row_kind = 'opening'
+                    AND volume IS NOT NULL
+                    AND overlimit_110 IS NULL
+                    AND overlimit_150 IS NULL
+                    AND kind IS NULL
+                )
+            ),
+            UNIQUE (contract_id, point_id, year, month, row_kind)
+        )
+        """
+    )
+    if _table_exists(connection, "monthly_fact"):
+        connection.execute(
+            """
+            INSERT INTO monthly_fact_v6 (
+                id, contract_id, point_id, year, month, row_kind,
+                volume, overlimit_110, overlimit_150, kind
+            )
+            SELECT
+                monthly_fact.id,
+                point.contract_id,
+                monthly_fact.point_id,
+                monthly_fact.year,
+                monthly_fact.month,
+                monthly_fact.row_kind,
+                monthly_fact.volume,
+                monthly_fact.overlimit_110,
+                monthly_fact.overlimit_150,
+                monthly_fact.kind
+            FROM monthly_fact
+            JOIN point ON point.id = monthly_fact.point_id
+            """
+        )
+        connection.execute("DROP TABLE monthly_fact")
+    connection.execute("ALTER TABLE monthly_fact_v6 RENAME TO monthly_fact")
+
+
+def _to_version_7(connection: sqlite3.Connection) -> None:
+    """Добавляет список точек, у которых сумма факта с января меняет группу."""
+    groups = _group_list()
+    connection.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS group_transition (
+            id INTEGER PRIMARY KEY,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+            recorded_group TEXT NOT NULL CHECK (recorded_group IN ({groups})),
+            calculated_group TEXT NOT NULL CHECK (calculated_group IN ({groups})),
+            volume TEXT NOT NULL,
+            direction TEXT NOT NULL CHECK (direction IN ('cheaper', 'dearer')),
+            UNIQUE (year, month, point_id)
+        )
+        """
+    )
+
+
+_STEPS = {
+    2: _to_version_2,
+    3: _to_version_3,
+    4: _to_version_4,
+    5: _to_version_5,
+    6: _to_version_6,
+    7: _to_version_7,
+}
 
 
 def _contains(value: object, fragment: object) -> int:

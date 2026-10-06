@@ -38,9 +38,9 @@ SURCHARGE_CITY_JANUARY_SEPTEMBER = Decimal("256.78")
 SURCHARGE_CITY_OCTOBER_DECEMBER = Decimal("419.78")
 SURCHARGE_OBLAST = Decimal("374.50")
 
-# Код 1 — город, код 2 — область, как в тестах движка.
-CITY_CODE = "1"
-OBLAST_CODE = "2"
+# 78 — Санкт-Петербург, 47 — Ленинградская область.
+CITY_CODE = "78"
+OBLAST_CODE = "47"
 
 
 @dataclass(frozen=True)

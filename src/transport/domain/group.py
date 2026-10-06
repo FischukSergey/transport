@@ -29,3 +29,15 @@ def group_of(
         if volume <= upper:
             return group
     return above
+
+
+def group_check_volume(fact: Decimal, overlimit: Decimal, *, share: Decimal) -> Decimal:
+    """Объём сверки группы по факту с начала года. Группу не назначает.
+
+    Вычет — меньшее из сверхлимита и доли факта. Отрицательный сверхлимит
+    в вычет не идёт.
+    """
+    deduct = min(overlimit, share * fact)
+    if deduct < 0:
+        deduct = Decimal(0)
+    return fact - deduct

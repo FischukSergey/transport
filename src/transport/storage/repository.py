@@ -2,7 +2,8 @@
 
 Повторный вызов с тем же естественным ключом обновляет строку.
 Таблиц версий нет. Новая дата группы точки добавляет период и старые не стирает.
-Факт, прогон, строка результата и замечание этим модулем не пишутся.
+Факт месяца, расхождения загрузки и список переходов этим модулем пишутся.
+Прогон, строка результата и замечание прогона — нет.
 """
 
 import sqlite3
@@ -294,39 +295,352 @@ def save_amendment(
 def save_annual_plan(
     connection: sqlite3.Connection,
     *,
+    contract_id: int,
     point_id: int,
+    region_id: int,
     year: int,
     volume: Decimal,
+    stated_group: Group | None,
 ) -> int:
+    """Пишет годовой план договора и точки. Тот же ключ обновляет объём, регион и группу файла."""
     return _write(
         connection,
         """
-        INSERT INTO annual_plan (point_id, year, volume)
-        VALUES (?, ?, ?)
-        ON CONFLICT (point_id, year) DO UPDATE SET volume = excluded.volume
+        INSERT INTO annual_plan (
+            contract_id, point_id, region_id, year, volume, stated_group
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (contract_id, point_id, year) DO UPDATE SET
+            region_id = excluded.region_id,
+            volume = excluded.volume,
+            stated_group = excluded.stated_group
         RETURNING id
         """,
-        (point_id, year, _decimal(volume)),
+        (
+            contract_id,
+            point_id,
+            region_id,
+            year,
+            _decimal(volume),
+            None if stated_group is None else stated_group.value,
+        ),
     )
 
 
 def save_monthly_plan(
     connection: sqlite3.Connection,
     *,
+    contract_id: int,
     point_id: int,
     year: int,
     month: int,
     volume: Decimal,
 ) -> int:
+    """Пишет месяц плана договора и точки. Тот же ключ обновляет объём."""
     return _write(
         connection,
         """
-        INSERT INTO monthly_plan (point_id, year, month, volume)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (point_id, year, month) DO UPDATE SET volume = excluded.volume
+        INSERT INTO monthly_plan (contract_id, point_id, year, month, volume)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (contract_id, point_id, year, month) DO UPDATE SET
+            volume = excluded.volume
         RETURNING id
         """,
-        (point_id, year, month, _decimal(volume)),
+        (contract_id, point_id, year, month, _decimal(volume)),
+    )
+
+
+def consumer_id_by_inn(connection: sqlite3.Connection, inn: str) -> int | None:
+    row = connection.execute(
+        "SELECT id FROM consumer WHERE inn = ? AND deleted_on IS NULL",
+        (inn,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
+def contract_by_number(connection: sqlite3.Connection, number: str) -> tuple[int, int] | None:
+    """Возвращает договор и его потребителя. Удалённую строку не отдаёт."""
+    row = connection.execute(
+        """
+        SELECT id, consumer_id FROM contract
+        WHERE number = ? AND deleted_on IS NULL
+        """,
+        (number,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), int(row[1])
+
+
+def point_id_by_code(connection: sqlite3.Connection, code: str) -> int | None:
+    row = connection.execute(
+        "SELECT id FROM point WHERE code = ? AND deleted_on IS NULL",
+        (code,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
+def region_id_by_code(connection: sqlite3.Connection, code: str) -> int | None:
+    row = connection.execute("SELECT id FROM region WHERE code = ?", (code,)).fetchone()
+    if row is None:
+        return None
+    return int(row[0])
+
+
+def point_contract_id(connection: sqlite3.Connection, point_id: int) -> int:
+    row = connection.execute(
+        "SELECT contract_id FROM point WHERE id = ?",
+        (point_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("точка не найдена")
+    return int(row[0])
+
+
+def save_monthly_fact(
+    connection: sqlite3.Connection,
+    *,
+    contract_id: int,
+    point_id: int,
+    year: int,
+    month: int,
+    volume: Decimal,
+    overlimit_110: Decimal,
+    overlimit_150: Decimal,
+    kind: ConsumerKind,
+) -> int:
+    """Пишет факт месяца договора и точки. Тот же ключ обновляет объёмы.
+
+    Карточки и прогон не создаёт.
+    """
+    return _write(
+        connection,
+        """
+        INSERT INTO monthly_fact (
+            contract_id, point_id, year, month, row_kind,
+            volume, overlimit_110, overlimit_150, kind
+        )
+        VALUES (?, ?, ?, ?, 'month', ?, ?, ?, ?)
+        ON CONFLICT (contract_id, point_id, year, month, row_kind) DO UPDATE SET
+            volume = excluded.volume,
+            overlimit_110 = excluded.overlimit_110,
+            overlimit_150 = excluded.overlimit_150,
+            kind = excluded.kind
+        RETURNING id
+        """,
+        (
+            contract_id,
+            point_id,
+            year,
+            month,
+            _decimal(volume),
+            _decimal(overlimit_110),
+            _decimal(overlimit_150),
+            kind.value,
+        ),
+    )
+
+
+def delete_month_facts(connection: sqlite3.Connection, year: int, month: int) -> None:
+    """Снимает факт месяца. Входящий остаток и прогон не трогает."""
+    connection.execute(
+        """
+        DELETE FROM monthly_fact
+        WHERE year = ? AND month = ? AND row_kind = 'month'
+        """,
+        (year, month),
+    )
+
+
+def clear_fact_discrepancies(connection: sqlite3.Connection) -> None:
+    """Очищает таблицу расхождений загрузки факта."""
+    connection.execute("DELETE FROM fact_discrepancy")
+
+
+def delete_group_transitions(connection: sqlite3.Connection, year: int, month: int) -> None:
+    """Снимает список переходов этого месяца. Группу точки не меняет."""
+    connection.execute(
+        "DELETE FROM group_transition WHERE year = ? AND month = ?",
+        (year, month),
+    )
+
+
+def insert_group_transitions(
+    connection: sqlite3.Connection,
+    rows: list[tuple[object, ...]],
+) -> None:
+    """Пишет точки, у которых сумма факта с января даёт другую группу."""
+    connection.executemany(
+        """
+        INSERT INTO group_transition (
+            year, month, point_id, recorded_group, calculated_group, volume, direction
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def points_with_fact(connection: sqlite3.Connection, year: int, month: int) -> list[int]:
+    """Точки, у которых есть факт с января по указанный месяц."""
+    rows = connection.execute(
+        """
+        SELECT DISTINCT point_id FROM monthly_fact
+        WHERE year = ? AND month <= ? AND row_kind = 'month'
+        """,
+        (year, month),
+    ).fetchall()
+    return [int(row[0]) for row in rows]
+
+
+def fact_volumes_through(
+    connection: sqlite3.Connection, point_id: int, year: int, month: int
+) -> list[tuple[str, str, str]]:
+    """Объём и два сверхлимита точки по всем договорам. Сумму считает вызывающий."""
+    rows = connection.execute(
+        """
+        SELECT volume, overlimit_110, overlimit_150
+        FROM monthly_fact
+        WHERE point_id = ? AND year = ? AND month <= ? AND row_kind = 'month'
+        """,
+        (point_id, year, month),
+    ).fetchall()
+    return [(str(volume), str(left), str(right)) for volume, left, right in rows]
+
+
+def group_on(connection: sqlite3.Connection, point_id: int, on: date) -> str | None:
+    """Группа точки на дату: последняя дата начала не позже неё."""
+    row = connection.execute(
+        """
+        SELECT group_code FROM point_group
+        WHERE point_id = ? AND effective_from <= ?
+        ORDER BY effective_from DESC
+        LIMIT 1
+        """,
+        (point_id, on.isoformat()),
+    ).fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+def point_consumer_kind(connection: sqlite3.Connection, point_id: int) -> str | None:
+    """Вид потребителя, на чьём договоре точка появилась."""
+    row = connection.execute(
+        """
+        SELECT consumer.kind
+        FROM point
+        JOIN contract ON contract.id = point.contract_id
+        JOIN consumer ON consumer.id = contract.consumer_id
+        WHERE point.id = ?
+        """,
+        (point_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+def insert_fact_discrepancies(
+    connection: sqlite3.Connection,
+    rows: list[tuple[object, ...]],
+) -> None:
+    """Пишет расхождения факта. Карточки по ним не создаёт."""
+    connection.executemany(
+        """
+        INSERT INTO fact_discrepancy (
+            year, month, rule_code, consumer_name, contract_number, point_code,
+            address, directory_text, volume, overlimit_110, overlimit_150,
+            file_row, message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+
+def point_by_code(connection: sqlite3.Connection, code: str) -> tuple[int, str] | None:
+    """Точка и её адрес. Удалённую строку не отдаёт."""
+    row = connection.execute(
+        "SELECT id, address FROM point WHERE code = ? AND deleted_on IS NULL",
+        (code,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row[0]), str(row[1])
+
+
+def consumer_card(connection: sqlite3.Connection, consumer_id: int) -> tuple[str, str] | None:
+    """Имя и вид потребителя. Удалённую строку не отдаёт."""
+    row = connection.execute(
+        "SELECT name, kind FROM consumer WHERE id = ? AND deleted_on IS NULL",
+        (consumer_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return str(row[0]), str(row[1])
+
+
+def consumer_names(connection: sqlite3.Connection) -> list[str]:
+    """Имена потребителей справочника. Удалённые не входят."""
+    rows = connection.execute("SELECT name FROM consumer WHERE deleted_on IS NULL").fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def planned_month_rows(
+    connection: sqlite3.Connection, year: int, month: int
+) -> list[tuple[str, str, str, str]]:
+    """Договор, точка, имя и объём плана месяца. Ноль отсекает вызывающий."""
+    rows = connection.execute(
+        """
+        SELECT contract.number, point.code, consumer.name, monthly_plan.volume
+        FROM monthly_plan
+        JOIN contract ON contract.id = monthly_plan.contract_id
+        JOIN point ON point.id = monthly_plan.point_id
+        JOIN consumer ON consumer.id = contract.consumer_id
+        WHERE monthly_plan.year = ? AND monthly_plan.month = ?
+        """,
+        (year, month),
+    ).fetchall()
+    return [(str(number), str(code), str(name), str(volume)) for number, code, name, volume in rows]
+
+
+def annual_volumes(connection: sqlite3.Connection, point_id: int, year: int) -> list[str]:
+    """Годовые объёмы точки по всем договорам. Сумму считает вызывающий, без REAL."""
+    rows = connection.execute(
+        "SELECT volume FROM annual_plan WHERE point_id = ? AND year = ?",
+        (point_id, year),
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+def replace_remarks(
+    connection: sqlite3.Connection,
+    *,
+    rule_code: str,
+    entity: str | None,
+    rows: list[tuple[int, str]],
+) -> None:
+    """Заменяет замечания одного правила и сущности. Прогон не создаёт."""
+    if entity is None:
+        connection.execute(
+            "DELETE FROM remark WHERE rule_code = ? AND entity IS NULL", (rule_code,)
+        )
+    else:
+        connection.execute(
+            "DELETE FROM remark WHERE rule_code = ? AND entity = ?",
+            (rule_code, entity),
+        )
+    connection.executemany(
+        """
+        INSERT INTO remark (severity, rule_code, entity, file_row, message)
+        VALUES ('warning', ?, ?, ?, ?)
+        """,
+        [(rule_code, entity, file_row, text) for file_row, text in rows],
     )
 
 
