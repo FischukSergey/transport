@@ -1,13 +1,15 @@
-"""Лист «план» годового файла.
+"""Годовой план.
 
-Строка «Итого» в план не входит. Год берётся из заголовка листа, колонка «Год» — это объём.
+Лист ищется по заголовку кода точки: имя листа может быть не «план».
+Строка «Итого» в план не входит. Календарный год берётся из шапки листа.
+Колонка объёма года — «Год» или «2026 год». Суточный минимум и максимум не читаются.
 """
 
 import re
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
@@ -16,7 +18,7 @@ from transport.domain.month import ConsumerKind
 VOLUME_PLACES = Decimal("0.001")
 
 _SHEET = "план"
-_YEAR = re.compile(r"(20\d{2})")
+_YEAR = re.compile(r"(20\d{2})\s+год")
 _MONTHS = (
     "январь",
     "февраль",
@@ -93,16 +95,32 @@ class PlanFile:
 
 
 def read_annual_plan(path: Path | str) -> PlanFile:
-    """Читает лист «план». В базу не пишет."""
+    """Читает лист годового плана. В базу не пишет.
+
+    Сначала берётся лист «план», если на нём есть код точки. Иначе — первый
+    лист с таким заголовком.
+    """
     source = Path(path)
     book = load_workbook(source, read_only=True, data_only=True)
     try:
-        if _SHEET not in book.sheetnames:
-            raise PlanSheetError(source)
-        grid = [tuple(row) for row in book[_SHEET].iter_rows(values_only=True)]
+        grid = _plan_grid(book)
     finally:
         book.close()
+    if grid is None:
+        raise PlanSheetError(source)
     return _parse(source, grid)
+
+
+def _plan_grid(book: Workbook) -> list[tuple[object, ...]] | None:
+    names = list(book.sheetnames)
+    if _SHEET in names:
+        names.remove(_SHEET)
+        names.insert(0, _SHEET)
+    for name in names:
+        grid = [tuple(row) for row in book[name].iter_rows(values_only=True)]
+        if _header_row(grid) is not None:
+            return grid
+    return None
 
 
 def volume_of(value: object) -> Decimal:
@@ -128,7 +146,7 @@ def _parse(path: Path, grid: list[tuple[object, ...]]) -> PlanFile:
     header_at = _header_row(grid)
     if header_at is None:
         raise PlanSheetError(path)
-    year = _year_of(grid[:header_at])
+    year = _year_of(grid[:header_at], grid[header_at])
     if year is None:
         raise PlanSheetError(path)
     columns = _columns(grid[header_at])
@@ -149,20 +167,31 @@ def _parse(path: Path, grid: list[tuple[object, ...]]) -> PlanFile:
 
 def _header_row(grid: list[tuple[object, ...]]) -> int | None:
     for index, row in enumerate(grid):
-        if any(_key(cell) == "кодтп" for cell in row):
+        if any(_compact(cell) == "кодтп" for cell in row):
             return index
     return None
 
 
-def _year_of(rows: list[tuple[object, ...]]) -> int | None:
+def _year_of(rows: list[tuple[object, ...]], header: tuple[object, ...]) -> int | None:
+    for cell in header:
+        found = _year_in(cell)
+        if found is not None:
+            return found
     for row in rows:
         for cell in row:
-            if cell is None:
-                continue
-            found = _YEAR.search(str(cell))
+            found = _year_in(cell)
             if found is not None:
-                return int(found.group(1))
+                return found
     return None
+
+
+def _year_in(value: object) -> int | None:
+    if value is None:
+        return None
+    found = _YEAR.search(_key(value))
+    if found is None:
+        return None
+    return int(found.group(1))
 
 
 def _columns(header: tuple[object, ...]) -> dict[str, int]:
@@ -179,7 +208,13 @@ def _columns(header: tuple[object, ...]) -> dict[str, int]:
     }
     for index, cell in enumerate(header):
         key = _key(cell)
-        if key in names or (key in _MONTHS and key not in found):
+        if _compact(cell) == "кодтп":
+            found["кодтп"] = index
+        elif key == "тарифная" or key.startswith("тарифная "):
+            found["тарифная"] = index
+        elif _year_volume(key):
+            found["год"] = index
+        elif key in names or (key in _MONTHS and key not in found):
             found[key] = index
     point = found.get("кодтп")
     if point is not None and point + 1 < len(header) and _key(header[point + 1]) == "":
@@ -251,6 +286,9 @@ def _group(value: object) -> Group:
     if isinstance(value, int):
         return Group(str(value))
     token = _key(value).replace("a", "а")
+    head, _, tail = token.partition(" ")
+    if tail.startswith("гр"):
+        token = head
     return Group(token)
 
 
@@ -282,6 +320,17 @@ def _cell(row: tuple[object, ...], columns: dict[str, int], key: str) -> object:
     if index >= len(row):
         return None
     return row[index]
+
+
+def _year_volume(key: str) -> bool:
+    if key == "год":
+        return True
+    year, _, word = key.partition(" ")
+    return word == "год" and year.isdigit()
+
+
+def _compact(value: object) -> str:
+    return _key(value).replace(" ", "")
 
 
 def _key(value: object) -> str:

@@ -1,6 +1,7 @@
 """Лист факта одного месяца.
 
 Строка покупателя без кода точки в факт не входит: это сумма его точек.
+Договор с этой строки переносится на следующие точки, если у них договор пуст.
 Категория, калорийность и тип газа не читаются.
 Год и месяц берутся из заголовка листа.
 """
@@ -128,6 +129,7 @@ def _parse(path: Path, grid: list[tuple[object, ...]]) -> FactFile:
         raise FactSheetError(path)
     lines: list[FactLine] = []
     buyer = ""
+    held_contract = ""
     for offset, row in enumerate(grid[header_at + 2 :], start=header_at + 3):
         point = _text(row, columns.point)
         contract = _text(row, columns.contract)
@@ -135,9 +137,12 @@ def _parse(path: Path, grid: list[tuple[object, ...]]) -> FactFile:
             name = _text(row, columns.buyer)
             if contract != "" and name != "" and not name.casefold().startswith("итого"):
                 buyer = name
+                held_contract = contract
             continue
         if point.casefold().startswith("итого"):
             continue
+        if contract == "":
+            contract = held_contract
         lines.append(
             FactLine(
                 offset,

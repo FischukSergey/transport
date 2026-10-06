@@ -8,6 +8,7 @@ from tests.domain.data import VOLUME_STEP
 from transport.domain.group import Group
 from transport.parameters import BOUND_G7
 
+HELD_LINES = 1
 YEAR = 2026
 MONTH = 4
 SIGNED_ON = date(YEAR, 1, 1)

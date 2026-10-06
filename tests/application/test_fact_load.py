@@ -35,6 +35,7 @@ from tests.ingest.fact_data import (
     FACT_VOLUME,
     FILE_ADDRESS,
     FIRST_CODE,
+    HELD_LINES,
     HOLD_CONTRACT,
     HOLD_OVER,
     HOLD_POINT,
@@ -133,6 +134,15 @@ def test_month_fact_records_gaps_and_skips_new_cards(tmp_path: Path) -> None:
         assert _count(connection, "SELECT COUNT(*) FROM fact_discrepancy") == DISCREPANCY_ROWS
     finally:
         connection.close()
+
+
+def test_empty_point_contract_comes_from_the_buyer(tmp_path: Path) -> None:
+    book = read_month_fact(_held(tmp_path))
+    assert len(book.lines) == HELD_LINES
+    assert book.lines[0].contract == CONTRACT_OK
+    assert book.lines[0].point == POINT_OK
+    assert book.lines[0].name == NAME
+    assert book.lines[0].volume == FACT_VOLUME
 
 
 def test_fact_load_lists_points_that_change_group(tmp_path: Path) -> None:
@@ -354,6 +364,28 @@ def _point(connection, contract_id: int, code: str, address: str) -> int:
         address=address,
         on=SIGNED_ON,
     )
+
+
+def _held(directory: Path) -> Path:
+    path = directory / "held.xlsx"
+    book = Workbook()
+    sheet = book.active
+    assert sheet is not None
+    sheet["B1"] = TITLE
+    for column, value in enumerate(_HEADERS, start=1):
+        sheet.cell(5, column, value)
+    for column, value in enumerate(_SUB, start=1):
+        sheet.cell(6, column, value)
+    point = list(_city(CONTRACT_OK, ADDRESS, POINT_OK, FACT_VOLUME, OVER_150, OVER_110))
+    point[2] = None
+    rows = (_buyer(1, NAME, CONTRACT_OK), tuple(point))
+    for offset, row in enumerate(rows, start=7):
+        for column, value in enumerate(row, start=1):
+            if value is not None:
+                sheet.cell(offset, column, value)
+    book.save(path)
+    book.close()
+    return path
 
 
 def _workbook(directory: Path, volume: Decimal) -> Path:

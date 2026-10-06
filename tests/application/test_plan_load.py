@@ -5,6 +5,13 @@ import pytest
 from openpyxl import Workbook
 from tests.ingest.data import (
     ADDRESS,
+    APPENDIX_ABOVE_GROUP,
+    APPENDIX_HEADERS,
+    APPENDIX_ISSUES,
+    APPENDIX_LINES,
+    APPENDIX_ROWS,
+    APPENDIX_SHEET,
+    APPENDIX_TITLE,
     CALCULATED,
     CITY_CODE,
     CONSUMER_KIND,
@@ -105,6 +112,18 @@ def test_load_splits_contracts_and_sums_the_group(tmp_path: Path) -> None:
         connection.close()
 
 
+def test_appendix_plan_reads_group_label_and_year_column(tmp_path: Path) -> None:
+    book = read_annual_plan(_appendix(tmp_path))
+    assert book.year == YEAR
+    assert len(book.lines) == APPENDIX_LINES
+    assert len(book.issues) == APPENDIX_ISSUES
+    assert book.lines[0].stated == STATED
+    assert book.lines[0].volume == VOLUME
+    assert book.lines[0].kind == OTHER_KIND
+    assert book.lines[1].stated == APPENDIX_ABOVE_GROUP
+    assert book.lines[1].volume == OBLAST_VOLUME
+
+
 def test_missing_sheet_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "empty.xlsx"
     book = Workbook()
@@ -112,6 +131,24 @@ def test_missing_sheet_is_refused(tmp_path: Path) -> None:
     book.close()
     with pytest.raises(PlanSheetError):
         read_annual_plan(path)
+
+
+def _appendix(directory: Path) -> Path:
+    path = directory / "appendix.xlsx"
+    book = Workbook()
+    sheet = book.active
+    assert sheet is not None
+    sheet.title = APPENDIX_SHEET
+    sheet["A1"] = APPENDIX_TITLE
+    for column, value in enumerate(APPENDIX_HEADERS, start=1):
+        sheet.cell(4, column, value)
+    for offset, row in enumerate(APPENDIX_ROWS, start=5):
+        for column, value in enumerate(row, start=1):
+            if value is not None:
+                sheet.cell(offset, column, value)
+    book.save(path)
+    book.close()
+    return path
 
 
 def _workbook(directory: Path) -> Path:

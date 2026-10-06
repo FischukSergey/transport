@@ -50,6 +50,19 @@ EMPTY_RUNS = 0
 RAW_VOLUME = 2.3979999999999997
 RAW_VOLUME_TEXT = Decimal("2.398")
 
+APPENDIX_TITLE = f"Договор от 01.12.2011 на {YEAR} год"
+APPENDIX_SHEET = "Лист1"
+APPENDIX_POINT_HEADER = "Код ТП"
+APPENDIX_GROUP_HEADER = "Тарифная группа"
+APPENDIX_YEAR_HEADER = f"{YEAR} год"
+APPENDIX_DAILY_HEADER = "Суточный объем Min"
+APPENDIX_GROUP = "7 гр."
+APPENDIX_ABOVE = "1а гр."
+APPENDIX_ABOVE_GROUP = Group.G1A
+APPENDIX_LINES = 2
+APPENDIX_ISSUES = 0
+APPENDIX_SUBHEADER = "Основной"
+
 PLAN_HEADERS = (
     None,
     "Наименование покупателя",
@@ -172,3 +185,112 @@ NEGATIVE_ROW = plan_row(
     month=MONTH,
 )
 PLAN_ROWS = (CITY_ROW, TOTAL_ROW, SECOND_CONTRACT_ROW, OBLAST_ROW, NEGATIVE_ROW)
+
+APPENDIX_HEADERS = (
+    "Наименование покупателя",
+    "ИНН",
+    "Адрес покупателя",
+    "Договор",
+    "ГРС",
+    APPENDIX_POINT_HEADER,
+    "СФ ТП",
+    "Адрес ТП",
+    APPENDIX_GROUP_HEADER,
+    APPENDIX_YEAR_HEADER,
+    "Январь",
+    "Февраль",
+    "Март",
+    "Апрель",
+    "Май",
+    "Июнь",
+    "Июль",
+    "Август",
+    "Сентябрь",
+    "Октябрь",
+    "Ноябрь",
+    "Декабрь",
+    APPENDIX_DAILY_HEADER,
+    "Суточный объем Max",
+)
+
+
+def appendix_row(
+    *,
+    name: str | None,
+    inn: str | None,
+    contract: str | None,
+    point: str | None,
+    region: str | None,
+    address: str | None,
+    stated: str | None,
+    volume: Decimal | None,
+    month: Decimal | None,
+) -> tuple[object, ...]:
+    months = () if month is None else (month,) * MONTH_COUNT
+    return (
+        name,
+        inn,
+        None,
+        contract,
+        None,
+        point,
+        region,
+        address,
+        stated,
+        volume,
+        *months,
+        None,
+        None,
+    )
+
+
+_MONTH_AT = APPENDIX_HEADERS.index("Январь")
+APPENDIX_ROWS = (
+    (None,) * _MONTH_AT
+    + (APPENDIX_SUBHEADER,) * MONTH_COUNT
+    + (None,) * (len(APPENDIX_HEADERS) - _MONTH_AT - MONTH_COUNT),
+    appendix_row(
+        name=BUYER,
+        inn=INN,
+        contract=CONTRACT_A,
+        point=POINT,
+        region=CITY,
+        address=ADDRESS,
+        stated=APPENDIX_GROUP,
+        volume=VOLUME,
+        month=MONTH,
+    ),
+    appendix_row(
+        name=OTHER_BUYER,
+        inn=OTHER_INN,
+        contract=OBLAST_CONTRACT,
+        point=OTHER_POINT,
+        region=OBLAST,
+        address=OTHER_ADDRESS,
+        stated=APPENDIX_ABOVE,
+        volume=OBLAST_VOLUME,
+        month=OBLAST_MONTH,
+    ),
+    appendix_row(
+        name=None,
+        inn=None,
+        contract="Итого",
+        point=None,
+        region=None,
+        address=None,
+        stated=None,
+        volume=VOLUME,
+        month=MONTH,
+    ),
+    appendix_row(
+        name="Подпись",
+        inn=None,
+        contract=None,
+        point=None,
+        region=None,
+        address=None,
+        stated=None,
+        volume=None,
+        month=None,
+    ),
+)
