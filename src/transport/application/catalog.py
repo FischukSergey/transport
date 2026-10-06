@@ -1,9 +1,10 @@
 """Справочники и ставки для окна.
 
-SQL не содержит. Расчёт, импорт и отчёты не запускает.
+SQL не содержит. Расчёт и отчёты не запускает. Соединение отдаёт экрану загрузки.
 """
 
 import re
+import sqlite3
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -218,6 +219,10 @@ class Catalog:
 
     def close(self) -> None:
         self._connection.close()
+
+    def connection(self) -> sqlite3.Connection:
+        """Соединение для загрузки файлов. Само загрузку не запускает."""
+        return self._connection
 
     def seed_local(self) -> None:
         """Добавляет тестовые регионы, тарифы и спецнадбавку, если таких ключей ещё нет.

@@ -1,18 +1,15 @@
-"""Окна справочников и ставок. Расчёт, импорт и отчёты отсюда не вызываются."""
+"""Окно справочников и ставок. Расчёт, загрузка файлов и отчёты отсюда не вызываются."""
 
 import re
 from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QApplication,
     QCalendarWidget,
     QComboBox,
     QDateEdit,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -39,7 +36,6 @@ from transport.application.catalog import (
     RateTextRejected,
     parse_rate,
 )
-from transport.application.settings import remember_database, remembered_database
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
@@ -81,7 +77,7 @@ class DirectoryWindow(QMainWindow):
         self._editing_consumer_id: int | None = None
         self._editing_contract_id: int | None = None
         self._editing_point_id: int | None = None
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle("Справочники")
         self.resize(960, 640)
         tabs = QTabWidget()
         tabs.setObjectName("directories")
@@ -99,6 +95,17 @@ class DirectoryWindow(QMainWindow):
         self._reload_tariffs()
         self._reload_surcharges()
         self._consumer_code.setText(self._catalog.next_consumer_code())
+
+    def reload_cards(self) -> None:
+        """Перечитывает потребителей, договоры и точки после загрузки плана.
+
+        Ставки не меняет. Код на открытой карточке правки не затирает.
+        """
+        self._reload_consumers()
+        self._reload_contracts()
+        self._reload_points()
+        if self._consumer_mode != "edit":
+            self._consumer_code.setText(self._catalog.next_consumer_code())
 
     def _regions_tab(self) -> QWidget:
         self._region_table = _table(["Код", "Наименование"])
@@ -759,33 +766,6 @@ class DirectoryWindow(QMainWindow):
 def create_window(catalog: Catalog) -> DirectoryWindow:
     """Собирает окно справочников. Файл базы не выбирает и расчёт не запускает."""
     return DirectoryWindow(catalog)
-
-
-def main() -> None:
-    """Открывает окно справочников и завершает процесс после его закрытия.
-
-    Путь к базе берётся из настроек рядом с программой. Если его нет,
-    файл выбирается диалогом и запоминается. Расчёт не запускается.
-    """
-    app = QApplication([])
-    directory = Path.cwd()
-    path = remembered_database(directory)
-    if path is None:
-        chosen, _selected = QFileDialog.getSaveFileName(
-            None,
-            "Файл базы",
-            "",
-            "База (*.sqlite)",
-        )
-        if not chosen:
-            return
-        path = Path(chosen)
-        remember_database(directory, path)
-    catalog = Catalog.open(path)
-    catalog.seed_local()
-    window = create_window(catalog)
-    window.show()
-    raise SystemExit(app.exec())
 
 
 def _page(

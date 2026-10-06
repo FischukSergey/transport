@@ -445,6 +445,34 @@ def save_monthly_fact(
     )
 
 
+def save_opening_fact(
+    connection: sqlite3.Connection,
+    *,
+    contract_id: int,
+    point_id: int,
+    year: int,
+    month: int,
+    volume: Decimal,
+) -> int:
+    """Пишет входящий остаток на конец месяца. Месяцы до него не создаёт.
+
+    Сверхлимит и вид потребителя остаются пустыми. Прогон не создаёт.
+    """
+    return _write(
+        connection,
+        """
+        INSERT INTO monthly_fact (
+            contract_id, point_id, year, month, row_kind, volume
+        )
+        VALUES (?, ?, ?, ?, 'opening', ?)
+        ON CONFLICT (contract_id, point_id, year, month, row_kind) DO UPDATE SET
+            volume = excluded.volume
+        RETURNING id
+        """,
+        (contract_id, point_id, year, month, _decimal(volume)),
+    )
+
+
 def delete_month_facts(connection: sqlite3.Connection, year: int, month: int) -> None:
     """Снимает факт месяца. Входящий остаток и прогон не трогает."""
     connection.execute(
@@ -512,6 +540,112 @@ def fact_volumes_through(
     return [(str(volume), str(left), str(right)) for volume, left, right in rows]
 
 
+class PeriodFact:
+    def __init__(
+        self,
+        point_id: int,
+        point_code: str,
+        consumer_id: int,
+        consumer_code: str,
+        kind: str,
+        region_id: int,
+        month: int,
+        row_kind: str,
+        volume: str,
+        overlimit_110: str | None,
+        overlimit_150: str | None,
+    ) -> None:
+        self.point_id = point_id
+        self.point_code = point_code
+        self.consumer_id = consumer_id
+        self.consumer_code = consumer_code
+        self.kind = kind
+        self.region_id = region_id
+        self.month = month
+        self.row_kind = row_kind
+        self.volume = volume
+        self.overlimit_110 = overlimit_110
+        self.overlimit_150 = overlimit_150
+
+
+class PeriodTransition:
+    def __init__(
+        self,
+        point_id: int,
+        month: int,
+        recorded_group: str,
+        calculated_group: str,
+        direction: str,
+    ) -> None:
+        self.point_id = point_id
+        self.month = month
+        self.recorded_group = recorded_group
+        self.calculated_group = calculated_group
+        self.direction = direction
+
+
+def period_facts(connection: sqlite3.Connection, year: int, month: int) -> list[PeriodFact]:
+    """Факт и входящий остаток с января по месяц. Месяцы без строки не добавляет."""
+    rows = connection.execute(
+        """
+        SELECT
+            point.id,
+            point.code,
+            consumer.id,
+            consumer.code,
+            consumer.kind,
+            consumer.region_id,
+            monthly_fact.month,
+            monthly_fact.row_kind,
+            monthly_fact.volume,
+            monthly_fact.overlimit_110,
+            monthly_fact.overlimit_150
+        FROM monthly_fact
+        JOIN point ON point.id = monthly_fact.point_id AND point.deleted_on IS NULL
+        JOIN contract ON contract.id = point.contract_id AND contract.deleted_on IS NULL
+        JOIN consumer ON consumer.id = contract.consumer_id AND consumer.deleted_on IS NULL
+        WHERE monthly_fact.year = ? AND monthly_fact.month <= ?
+        ORDER BY point.code, monthly_fact.month, monthly_fact.row_kind
+        """,
+        (year, month),
+    ).fetchall()
+    return [
+        PeriodFact(
+            int(row[0]),
+            str(row[1]),
+            int(row[2]),
+            str(row[3]),
+            str(row[4]),
+            int(row[5]),
+            int(row[6]),
+            str(row[7]),
+            str(row[8]),
+            None if row[9] is None else str(row[9]),
+            None if row[10] is None else str(row[10]),
+        )
+        for row in rows
+    ]
+
+
+def period_transitions(
+    connection: sqlite3.Connection, year: int, month: int
+) -> list[PeriodTransition]:
+    """Отметки загрузки с января по месяц. Группу заново не считает."""
+    rows = connection.execute(
+        """
+        SELECT point_id, month, recorded_group, calculated_group, direction
+        FROM group_transition
+        WHERE year = ? AND month <= ?
+        ORDER BY point_id, month
+        """,
+        (year, month),
+    ).fetchall()
+    return [
+        PeriodTransition(int(row[0]), int(row[1]), str(row[2]), str(row[3]), str(row[4]))
+        for row in rows
+    ]
+
+
 def group_on(connection: sqlite3.Connection, point_id: int, on: date) -> str | None:
     """Группа точки на дату: последняя дата начала не позже неё."""
     row = connection.execute(
@@ -561,6 +695,39 @@ def insert_fact_discrepancies(
         """,
         rows,
     )
+
+
+def list_fact_discrepancies(
+    connection: sqlite3.Connection,
+) -> list[tuple[int, int, str, str, str, str, str]]:
+    """Расхождения факта для экрана. Карточки по ним не создаёт."""
+    rows = connection.execute(
+        """
+        SELECT year, month, rule_code, consumer_name, contract_number, point_code, message
+        FROM fact_discrepancy
+        ORDER BY year, month, id
+        """
+    ).fetchall()
+    return [
+        (
+            int(row[0]),
+            int(row[1]),
+            str(row[2]),
+            "" if row[3] is None else str(row[3]),
+            "" if row[4] is None else str(row[4]),
+            "" if row[5] is None else str(row[5]),
+            "" if row[6] is None else str(row[6]),
+        )
+        for row in rows
+    ]
+
+
+def count_runs(connection: sqlite3.Connection) -> int:
+    """Число прогонов. Загрузка плана и факта его не меняет."""
+    row = connection.execute("SELECT COUNT(*) FROM run").fetchone()
+    if row is None:
+        return 0
+    return int(row[0])
 
 
 def point_by_code(connection: sqlite3.Connection, code: str) -> tuple[int, str] | None:
@@ -616,6 +783,50 @@ def annual_volumes(connection: sqlite3.Connection, point_id: int, year: int) -> 
         (point_id, year),
     ).fetchall()
     return [str(row[0]) for row in rows]
+
+
+def list_annual_plan(
+    connection: sqlite3.Connection,
+) -> list[tuple[str, str, str, int, str, str, str]]:
+    """Годовой план для экрана. Прогон не создаёт.
+
+    Строка: покупатель, договор, точка, год, объём, группа файла, группа на 1 января.
+    """
+    rows = connection.execute(
+        """
+        SELECT
+            consumer.name,
+            contract.number,
+            point.code,
+            annual_plan.year,
+            annual_plan.volume,
+            COALESCE(annual_plan.stated_group, ''),
+            COALESCE(point_group.group_code, '')
+        FROM annual_plan
+        JOIN contract ON contract.id = annual_plan.contract_id
+        JOIN consumer ON consumer.id = contract.consumer_id
+        JOIN point ON point.id = annual_plan.point_id
+        LEFT JOIN point_group
+            ON point_group.point_id = annual_plan.point_id
+            AND point_group.effective_from = annual_plan.year || '-01-01'
+        WHERE consumer.deleted_on IS NULL
+            AND contract.deleted_on IS NULL
+            AND point.deleted_on IS NULL
+        ORDER BY annual_plan.year, consumer.name, contract.number, point.code
+        """
+    ).fetchall()
+    return [
+        (
+            str(row[0]),
+            str(row[1]),
+            str(row[2]),
+            int(row[3]),
+            str(row[4]),
+            str(row[5]),
+            str(row[6]),
+        )
+        for row in rows
+    ]
 
 
 def replace_remarks(

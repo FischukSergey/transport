@@ -80,6 +80,60 @@ def accept_plan_group(
     connection.commit()
 
 
+class OpenMismatch:
+    def __init__(
+        self,
+        point_code: str,
+        year: int,
+        stated: tuple[Group, ...],
+        calculated: Group,
+        message: str,
+    ) -> None:
+        self.point_code = point_code
+        self.year = year
+        self.stated = stated
+        self.calculated = calculated
+        self.message = message
+
+
+def open_mismatches(connection: sqlite3.Connection) -> tuple[OpenMismatch, ...]:
+    """Открытые расхождения группы плана. По точке и году одна строка."""
+    rows = connection.execute(
+        """
+        SELECT remark.entity, annual_plan.year, remark.message
+        FROM remark
+        JOIN point ON point.code = remark.entity AND point.deleted_on IS NULL
+        JOIN annual_plan ON annual_plan.point_id = point.id
+        WHERE remark.rule_code = ?
+        ORDER BY remark.entity, annual_plan.year, remark.file_row
+        """,
+        (GROUP_MISMATCH,),
+    ).fetchall()
+    found: dict[tuple[str, int], OpenMismatch] = {}
+    for entity, year, message in rows:
+        code = str(entity)
+        plan_year = int(year)
+        key = (code, plan_year)
+        if key in found:
+            continue
+        point_id = point_id_by_code(connection, code)
+        if point_id is None:
+            continue
+        stated = tuple(
+            Group(part)
+            for part in _stated_snapshot(connection, point_id, plan_year).split(",")
+            if part
+        )
+        found[key] = OpenMismatch(
+            code,
+            plan_year,
+            stated,
+            _calculated_group(connection, point_id, plan_year),
+            str(message),
+        )
+    return tuple(found.values())
+
+
 _REGION_NAMES = {
     CITY_CODE: "Санкт-Петербург",
     OBLAST_CODE: "Ленинградская область",
@@ -92,10 +146,12 @@ class PlanLoad:
         year: int,
         lines: int,
         mismatches: tuple[tuple[str, Group, Group], ...],
+        skipped: int,
     ) -> None:
         self.year = year
         self.lines = lines
         self.mismatches = mismatches
+        self.skipped = skipped
 
 
 def load_annual_plan(connection: sqlite3.Connection, path: Path | str) -> PlanLoad:
@@ -124,7 +180,12 @@ def load_annual_plan(connection: sqlite3.Connection, path: Path | str) -> PlanLo
         rows=[(issue.file_row, issue.text) for issue in book.issues] + skipped,
     )
     connection.commit()
-    return PlanLoad(book.year, len(written), tuple(mismatches))
+    return PlanLoad(
+        book.year,
+        len(written),
+        tuple(mismatches),
+        len(skipped) + len(book.issues),
+    )
 
 
 def _regions(connection: sqlite3.Connection) -> dict[str, int]:

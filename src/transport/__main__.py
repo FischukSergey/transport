@@ -1,3 +1,3 @@
-from transport.ui.window import main
+from transport.ui.home import main
 
 main()
