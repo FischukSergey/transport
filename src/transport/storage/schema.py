@@ -8,8 +8,8 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-# 7 — загрузка факта пишет точки, у которых сумма с января меняет группу.
-SCHEMA_VERSION = 7
+# 8 — акцепт выбирает группу плана: из файла или расчётную.
+SCHEMA_VERSION = 8
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -24,6 +24,7 @@ TABLES = frozenset(
         "annual_plan",
         "monthly_plan",
         "point_group",
+        "plan_group_decision",
         "tariff",
         "surcharge",
         "monthly_fact",
@@ -126,6 +127,17 @@ CREATE TABLE IF NOT EXISTS point_group (
     effective_from TEXT NOT NULL,
     group_code TEXT NOT NULL CHECK (group_code IN ({_sql_in(_GROUPS)})),
     UNIQUE (point_id, effective_from)
+);
+
+-- Решение человека по расхождению группы. Повторная загрузка того же плана его не затирает.
+CREATE TABLE IF NOT EXISTS plan_group_decision (
+    id INTEGER PRIMARY KEY,
+    point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+    year INTEGER NOT NULL,
+    stated_groups TEXT NOT NULL,
+    calculated_group TEXT NOT NULL CHECK (calculated_group IN ({_sql_in(_GROUPS)})),
+    accepted_group TEXT NOT NULL CHECK (accepted_group IN ({_sql_in(_GROUPS)})),
+    UNIQUE (point_id, year)
 );
 
 -- Дата начала — первое число месяца. Иной день в таблицу не входит.

@@ -517,6 +517,24 @@ def _to_version_7(connection: sqlite3.Connection) -> None:
     )
 
 
+def _to_version_8(connection: sqlite3.Connection) -> None:
+    """Добавляет решение человека, какую группу плана оставить у точки."""
+    groups = _group_list()
+    connection.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS plan_group_decision (
+            id INTEGER PRIMARY KEY,
+            point_id INTEGER NOT NULL REFERENCES point (id) ON DELETE RESTRICT,
+            year INTEGER NOT NULL,
+            stated_groups TEXT NOT NULL,
+            calculated_group TEXT NOT NULL CHECK (calculated_group IN ({groups})),
+            accepted_group TEXT NOT NULL CHECK (accepted_group IN ({groups})),
+            UNIQUE (point_id, year)
+        )
+        """
+    )
+
+
 _STEPS = {
     2: _to_version_2,
     3: _to_version_3,
@@ -524,6 +542,7 @@ _STEPS = {
     5: _to_version_5,
     6: _to_version_6,
     7: _to_version_7,
+    8: _to_version_8,
 }
 
 

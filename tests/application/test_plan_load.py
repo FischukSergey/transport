@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 from tests.ingest.data import (
+    ACCEPTED_REMARKS,
     ADDRESS,
     APPENDIX_ABOVE_GROUP,
     APPENDIX_HEADERS,
@@ -18,10 +19,12 @@ from tests.ingest.data import (
     CONTRACT_A,
     CONTRACT_B,
     CONTRACT_ROWS,
+    EMPTY_MISMATCHES,
     EMPTY_RUNS,
     FIRST_CODE,
     FIRST_MONTH,
     INN,
+    KEPT_DECISIONS,
     MISMATCHES,
     MONTH,
     MONTH_COUNT,
@@ -38,9 +41,11 @@ from tests.ingest.data import (
     PLAN_LINES,
     PLAN_ROWS,
     POINT,
+    POINT_MISMATCHES,
     POINT_ROWS,
     RAW_VOLUME,
     RAW_VOLUME_TEXT,
+    REJECTED_GROUP,
     SECOND_CODE,
     STATED,
     TITLE,
@@ -48,7 +53,12 @@ from tests.ingest.data import (
     YEAR,
 )
 
-from transport.application.plan_load import GROUP_MISMATCH, load_annual_plan
+from transport.application.plan_load import (
+    GROUP_MISMATCH,
+    PlanGroupRejected,
+    accept_plan_group,
+    load_annual_plan,
+)
 from transport.application.sample import CITY_CODE as SAMPLE_CITY
 from transport.application.sample import OBLAST_CODE as SAMPLE_OBLAST
 from transport.ingest.annual import PlanSheetError, read_annual_plan, volume_of
@@ -83,7 +93,7 @@ def test_load_splits_contracts_and_sums_the_group(tmp_path: Path) -> None:
         assert loaded.year == YEAR
         assert loaded.lines == PLAN_LINES
         assert again.lines == PLAN_LINES
-        assert loaded.mismatches == ((POINT, STATED, CALCULATED), (POINT, STATED, CALCULATED))
+        assert loaded.mismatches == POINT_MISMATCHES
         assert _count(connection, "consumer") == PARTY_ROWS
         assert _count(connection, "contract") == CONTRACT_ROWS
         assert _count(connection, "point") == POINT_ROWS
@@ -103,11 +113,75 @@ def test_load_splits_contracts_and_sums_the_group(tmp_path: Path) -> None:
         assert _region(connection, POINT, CONTRACT_A) == CITY_CODE
         assert _region(connection, OTHER_POINT, OBLAST_CONTRACT) == OBLAST_CODE
         assert _address(connection, POINT) == ADDRESS
-        remarks = connection.execute(
-            "SELECT COUNT(*) FROM remark WHERE rule_code = ?",
-            (GROUP_MISMATCH,),
-        ).fetchone()
-        assert remarks == (MISMATCHES,)
+        assert _remarks(connection) == (MISMATCHES,)
+    finally:
+        connection.close()
+
+
+def test_accepted_file_group_survives_reload(tmp_path: Path) -> None:
+    path = _workbook(tmp_path)
+    connection = open_database(tmp_path / "base.sqlite")
+    try:
+        load_annual_plan(connection, path)
+        accept_plan_group(connection, point_code=POINT, year=YEAR, group=STATED)
+        assert _group(connection, POINT) == STATED.value
+        assert _remarks(connection) == (ACCEPTED_REMARKS,)
+        again = load_annual_plan(connection, path)
+        assert again.mismatches == EMPTY_MISMATCHES
+        assert _group(connection, POINT) == STATED.value
+        assert _remarks(connection) == (ACCEPTED_REMARKS,)
+        assert _count(connection, "run") == EMPTY_RUNS
+    finally:
+        connection.close()
+
+
+def test_accepted_calculated_group_closes_the_remark(tmp_path: Path) -> None:
+    path = _workbook(tmp_path)
+    connection = open_database(tmp_path / "base.sqlite")
+    try:
+        load_annual_plan(connection, path)
+        accept_plan_group(connection, point_code=POINT, year=YEAR, group=CALCULATED)
+        assert _group(connection, POINT) == CALCULATED.value
+        again = load_annual_plan(connection, path)
+        assert again.mismatches == EMPTY_MISMATCHES
+        assert _group(connection, POINT) == CALCULATED.value
+        assert _remarks(connection) == (ACCEPTED_REMARKS,)
+    finally:
+        connection.close()
+
+
+def test_group_outside_file_and_calculation_is_rejected(tmp_path: Path) -> None:
+    path = _workbook(tmp_path)
+    connection = open_database(tmp_path / "base.sqlite")
+    try:
+        load_annual_plan(connection, path)
+        with pytest.raises(PlanGroupRejected):
+            accept_plan_group(connection, point_code=POINT, year=YEAR, group=REJECTED_GROUP)
+        assert _group(connection, POINT) == CALCULATED.value
+        assert _remarks(connection) == (MISMATCHES,)
+    finally:
+        connection.close()
+
+
+def test_changed_snapshot_drops_the_decision(tmp_path: Path) -> None:
+    path = _workbook(tmp_path)
+    connection = open_database(tmp_path / "base.sqlite")
+    try:
+        load_annual_plan(connection, path)
+        accept_plan_group(connection, point_code=POINT, year=YEAR, group=STATED)
+        connection.execute(
+            """
+            UPDATE plan_group_decision
+            SET calculated_group = ?
+            WHERE point_id = (SELECT id FROM point WHERE code = ?)
+            """,
+            (REJECTED_GROUP.value, POINT),
+        )
+        again = load_annual_plan(connection, path)
+        assert again.mismatches == POINT_MISMATCHES
+        assert _group(connection, POINT) == CALCULATED.value
+        assert _remarks(connection) == (MISMATCHES,)
+        assert _decisions(connection) == (KEPT_DECISIONS,)
     finally:
         connection.close()
 
@@ -219,6 +293,21 @@ def _month_volume(connection, point: str, contract: str) -> Decimal:
     ).fetchone()
     assert row is not None
     return Decimal(str(row[0]))
+
+
+def _remarks(connection) -> tuple[int, ...]:
+    row = connection.execute(
+        "SELECT COUNT(*) FROM remark WHERE rule_code = ?",
+        (GROUP_MISMATCH,),
+    ).fetchone()
+    assert row is not None
+    return (int(row[0]),)
+
+
+def _decisions(connection) -> tuple[int, ...]:
+    row = connection.execute("SELECT COUNT(*) FROM plan_group_decision").fetchone()
+    assert row is not None
+    return (int(row[0]),)
 
 
 def _group(connection, code: str) -> str:
