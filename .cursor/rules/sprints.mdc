@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Спринты и документы
 
-Источники: `концепция.md`, `архитектура.md`, `функционал.md`, `docs/README.md`.
+Источники: `concept.md`, `architecture.md`, `functionality.md`, `docs/README.md`.
 
 Для спринта **N**:
 

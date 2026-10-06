@@ -12,9 +12,9 @@ is_background: true
 
 | Документ | Зачем |
 |----------|--------|
-| `концепция.md` | Границы предмета |
-| `архитектура.md` | Слои, схема, сборка |
-| `функционал.md` | Что видит пользователь, вне scope |
+| `concept.md` | Границы предмета |
+| `architecture.md` | Слои, схема, сборка |
+| `functionality.md` | Что видит пользователь, вне scope |
 | `docs/README.md` | Индекс спринтов |
 | `docs/sprint-N-plan.md` / `sprint-N-checklist.md` | Scope и DoD — **верь чеклисту** |
 | `docs/contract-sprint-N.md` | Контракт входа и выхода |

@@ -1,6 +1,6 @@
 # Контракт Sprint 2
 
-Источник: [`sprint-2-plan.md`](sprint-2-plan.md), [`../концепция.md`](../концепция.md).
+Источник: [`sprint-2-plan.md`](sprint-2-plan.md), [`../concept.md`](../concept.md).
 
 ## 1) Решения спринта
 
