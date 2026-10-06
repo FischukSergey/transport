@@ -20,11 +20,14 @@ from transport.storage.repository import (
     annual_volumes,
     consumer_id_by_inn,
     contract_by_number,
+    delete_plan_group_decision,
+    plan_group_decision,
     point_id_by_code,
     region_id_by_code,
     replace_remarks,
     save_annual_plan,
     save_monthly_plan,
+    save_plan_group_decision,
     save_point_group,
     save_region,
 )
@@ -32,6 +35,50 @@ from transport.storage.repository import (
 # Код правила, когда группа файла не совпала с суммой объёмов точки.
 GROUP_MISMATCH = "group_mismatch"
 PLAN_ROW = "plan_row"
+
+
+class PlanGroupRejected(Exception):
+    """Группа не из файла и не расчётная. Решение не пишется."""
+
+    def __init__(self, group: Group) -> None:
+        self.group = group
+        super().__init__(group.value)
+
+
+def accept_plan_group(
+    connection: sqlite3.Connection, *, point_code: str, year: int, group: Group
+) -> None:
+    """Фиксирует группу точки на 1 января года. Прогон не создаёт.
+
+    Группа — расчётная по сумме годовых объёмов или одна из групп файла.
+    Повторная загрузка того же плана это решение сохраняет. Изменились
+    группы файла или расчёт — решение снимается и замечание открывается снова.
+    """
+    point_id = point_id_by_code(connection, point_code)
+    if point_id is None:
+        raise PlanGroupRejected(group)
+    calculated = _calculated_group(connection, point_id, year)
+    stated = _stated_snapshot(connection, point_id, year)
+    allowed = set(stated.split(",")) if stated else set()
+    if group != calculated and group.value not in allowed:
+        raise PlanGroupRejected(group)
+    save_plan_group_decision(
+        connection,
+        point_id=point_id,
+        year=year,
+        stated_groups=stated,
+        calculated_group=calculated,
+        accepted_group=group,
+    )
+    save_point_group(
+        connection,
+        point_id=point_id,
+        effective_from=date(year, 1, 1),
+        group=group,
+    )
+    replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=point_code, rows=[])
+    connection.commit()
+
 
 _REGION_NAMES = {
     CITY_CODE: "Санкт-Петербург",
@@ -169,27 +216,56 @@ def _groups(
         point_id = point_id_by_code(connection, code)
         if point_id is None:
             continue
-        total = sum(
-            (Decimal(volume) for volume in annual_volumes(connection, point_id, year)),
-            Decimal(0),
-        )
-        calculated = group_of(total, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE)
+        calculated = _calculated_group(connection, point_id, year)
+        stated = _stated_snapshot(connection, point_id, year)
+        decision = plan_group_decision(connection, point_id, year)
+        held = decision is not None and decision[0] == stated and decision[1] == calculated.value
+        if decision is not None and held:
+            chosen = Group(decision[2])
+        else:
+            if decision is not None:
+                delete_plan_group_decision(connection, point_id, year)
+            chosen = calculated
         save_point_group(
             connection,
             point_id=point_id,
             effective_from=date(year, 1, 1),
-            group=calculated,
+            group=chosen,
         )
         remarks: list[tuple[int, str]] = []
-        for line in group_lines:
-            if line.stated == calculated:
-                continue
-            remarks.append(
-                (
-                    line.file_row,
-                    f"В файле группа {line.stated.value}, по сумме объёмов точки группа {calculated.value}.",
+        if not held:
+            for line in group_lines:
+                if line.stated == calculated:
+                    continue
+                remarks.append(
+                    (
+                        line.file_row,
+                        (
+                            f"В файле группа {line.stated.value}, "
+                            f"по сумме объёмов точки группа {calculated.value}."
+                        ),
+                    )
                 )
-            )
-            mismatches.append((code, line.stated, calculated))
+                mismatches.append((code, line.stated, calculated))
         replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=code, rows=remarks)
     return mismatches
+
+
+def _calculated_group(connection: sqlite3.Connection, point_id: int, year: int) -> Group:
+    total = sum(
+        (Decimal(volume) for volume in annual_volumes(connection, point_id, year)),
+        Decimal(0),
+    )
+    return group_of(total, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE)
+
+
+def _stated_snapshot(connection: sqlite3.Connection, point_id: int, year: int) -> str:
+    rows = connection.execute(
+        """
+        SELECT DISTINCT stated_group
+        FROM annual_plan
+        WHERE point_id = ? AND year = ? AND stated_group IS NOT NULL
+        """,
+        (point_id, year),
+    ).fetchall()
+    return ",".join(sorted(str(row[0]) for row in rows))

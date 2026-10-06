@@ -2,8 +2,8 @@
 
 Повторный вызов с тем же естественным ключом обновляет строку.
 Таблиц версий нет. Новая дата группы точки добавляет период и старые не стирает.
-Факт месяца, расхождения загрузки и список переходов этим модулем пишутся.
-Прогон, строка результата и замечание прогона — нет.
+Факт месяца, расхождения загрузки, список переходов и решение по группе плана
+этим модулем пишутся. Прогон, строка результата и замечание прогона — нет.
 """
 
 import sqlite3
@@ -666,6 +666,58 @@ def save_point_group(
         RETURNING id
         """,
         (point_id, effective_from.isoformat(), group.value),
+    )
+
+
+def plan_group_decision(
+    connection: sqlite3.Connection, point_id: int, year: int
+) -> tuple[str, str, str] | None:
+    """Группы файла, расчётная группа и выбранная. Нет решения — None."""
+    row = connection.execute(
+        """
+        SELECT stated_groups, calculated_group, accepted_group
+        FROM plan_group_decision
+        WHERE point_id = ? AND year = ?
+        """,
+        (point_id, year),
+    ).fetchone()
+    if row is None:
+        return None
+    return (str(row[0]), str(row[1]), str(row[2]))
+
+
+def save_plan_group_decision(
+    connection: sqlite3.Connection,
+    *,
+    point_id: int,
+    year: int,
+    stated_groups: str,
+    calculated_group: Group,
+    accepted_group: Group,
+) -> int:
+    """Пишет выбор группы на год точки. Тот же год обновляет выбор."""
+    return _write(
+        connection,
+        """
+        INSERT INTO plan_group_decision (
+            point_id, year, stated_groups, calculated_group, accepted_group
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (point_id, year) DO UPDATE SET
+            stated_groups = excluded.stated_groups,
+            calculated_group = excluded.calculated_group,
+            accepted_group = excluded.accepted_group
+        RETURNING id
+        """,
+        (point_id, year, stated_groups, calculated_group.value, accepted_group.value),
+    )
+
+
+def delete_plan_group_decision(connection: sqlite3.Connection, point_id: int, year: int) -> None:
+    """Снимает выбор, когда группы файла или расчёт уже другие."""
+    connection.execute(
+        "DELETE FROM plan_group_decision WHERE point_id = ? AND year = ?",
+        (point_id, year),
     )
 
 
