@@ -4,23 +4,53 @@ from pathlib import Path
 
 import pytest
 from tests.application.close_data import (
+    ADDRESS,
+    CITY_REGION_CODE,
+    CITY_REGION_NAME,
+    CITY_SURCHARGE,
+    CONTRACT,
     EMPTY_COST,
     GAP_CASES,
+    JANUARY,
     JANUARY_NET,
+    OBLAST_SURCHARGE,
     OPENING_CASES,
     ORDINARY,
+    POINT_REGION_BUYER,
+    POINT_REGION_CODE,
+    POINT_REGION_GROUP,
+    POINT_REGION_NAME,
+    POINT_REGION_NET,
+    POINT_REGION_POINT,
+    POINT_REGION_TARIFF,
+    POINT_REGION_VOLUME,
     POPULATION_BOOK,
     POPULATION_COUNT,
     POPULATION_POINTS,
     RATE_CASES,
+    RECORDED_ON,
     ROUTE_CASES,
     SNAPSHOT_MONTHS,
     SNAPSHOT_POINTS,
     SNAPSHOT_POPULATION,
     SNAPSHOT_STATUS,
+    SPLIT_BUYER,
+    SPLIT_CONTRACT,
+    SPLIT_CONTRACT_OTHER,
+    SPLIT_GROUP,
+    SPLIT_LINES,
+    SPLIT_NET,
+    SPLIT_POINT,
+    SPLIT_RATE,
+    SPLIT_SNAPSHOT_VOLUME,
+    SPLIT_SURCHARGE_NET,
+    SPLIT_TARIFF,
+    SPLIT_VOLUME,
     STORED_RUNS,
     SURCHARGE_ABSENT,
     VOLUME,
+    YEAR,
+    ZERO,
     Book,
     GapCase,
     OpeningCase,
@@ -35,6 +65,7 @@ from transport.application.close import (
     assemble_snapshot,
     close_month,
 )
+from transport.domain.month import ConsumerKind
 from transport.storage.database import open_database
 from transport.storage.repository import (
     RateDateRejected,
@@ -46,6 +77,7 @@ from transport.storage.repository import (
     save_point,
     save_point_group,
     save_region,
+    save_surcharge,
     save_tariff,
 )
 
@@ -53,6 +85,35 @@ _UI = Path("src/transport/ui")
 _CLOSE = Path("src/transport/application/close.py")
 _ENGINE = frozenset({"month_charges", "transition_charges", "year_end_reimbursement"})
 _SEARCH = frozenset({"group_of", "group_check_volume"})
+
+
+def test_contract_amounts_are_rounded_before_the_point_line(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _two_contracts(connection)
+        result = close_month(connection, year=YEAR, month=JANUARY)
+        point = result.snapshot.points[0]
+        line = result.lines[0]
+        assert len(result.lines) == SPLIT_LINES
+        assert point.months[0].volume == SPLIT_SNAPSHOT_VOLUME
+        assert line.charges is not None
+        assert line.charges.surcharge == SPLIT_SURCHARGE_NET
+        assert line.charges.net == SPLIT_NET
+    finally:
+        connection.close()
+
+
+def test_surcharge_uses_the_point_region(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _point_region(connection)
+        result = close_month(connection, year=YEAR, month=JANUARY)
+        line = result.lines[0]
+        assert line.charges is not None
+        assert line.charges.surcharge == OBLAST_SURCHARGE
+        assert line.charges.net == POINT_REGION_NET
+    finally:
+        connection.close()
 
 
 def test_snapshot_is_assembled_from_the_database(tmp_path: Path) -> None:
@@ -276,6 +337,126 @@ def _load(connection: sqlite3.Connection, book: Book) -> None:
                     )
                 ],
             )
+
+
+def _two_contracts(connection: sqlite3.Connection) -> None:
+    region_id = save_region(connection, code=CITY_REGION_CODE, name=CITY_REGION_NAME)
+    save_tariff(connection, group=SPLIT_GROUP, effective_from=RECORDED_ON, rate=SPLIT_TARIFF)
+    save_surcharge(
+        connection,
+        region_id=region_id,
+        group=SPLIT_GROUP,
+        effective_from=RECORDED_ON,
+        rate=SPLIT_RATE,
+    )
+    consumer_id = save_consumer(
+        connection,
+        code=SPLIT_BUYER,
+        name=CITY_REGION_NAME,
+        region_id=region_id,
+        kind=ConsumerKind.INDUSTRIAL,
+        inn=None,
+        on=RECORDED_ON,
+    )
+    point_id: int | None = None
+    for number in (SPLIT_CONTRACT, SPLIT_CONTRACT_OTHER):
+        contract_id = save_contract(
+            connection,
+            consumer_id=consumer_id,
+            number=number,
+            signed_on=RECORDED_ON,
+            on=RECORDED_ON,
+        )
+        if point_id is None:
+            point_id = save_point(
+                connection,
+                contract_id=contract_id,
+                code=SPLIT_POINT,
+                address=ADDRESS,
+                on=RECORDED_ON,
+            )
+            save_point_group(
+                connection,
+                point_id=point_id,
+                effective_from=RECORDED_ON,
+                group=SPLIT_GROUP,
+            )
+        save_monthly_fact(
+            connection,
+            contract_id=contract_id,
+            point_id=point_id,
+            year=YEAR,
+            month=JANUARY,
+            volume=SPLIT_VOLUME,
+            overlimit_110=ZERO,
+            overlimit_150=ZERO,
+            kind=ConsumerKind.INDUSTRIAL,
+        )
+
+
+def _point_region(connection: sqlite3.Connection) -> None:
+    city = save_region(connection, code=CITY_REGION_CODE, name=CITY_REGION_NAME)
+    oblast = save_region(connection, code=POINT_REGION_CODE, name=POINT_REGION_NAME)
+    save_tariff(
+        connection,
+        group=POINT_REGION_GROUP,
+        effective_from=RECORDED_ON,
+        rate=POINT_REGION_TARIFF,
+    )
+    save_surcharge(
+        connection,
+        region_id=city,
+        group=POINT_REGION_GROUP,
+        effective_from=RECORDED_ON,
+        rate=CITY_SURCHARGE,
+    )
+    save_surcharge(
+        connection,
+        region_id=oblast,
+        group=POINT_REGION_GROUP,
+        effective_from=RECORDED_ON,
+        rate=OBLAST_SURCHARGE,
+    )
+    consumer_id = save_consumer(
+        connection,
+        code=POINT_REGION_BUYER,
+        name=CITY_REGION_NAME,
+        region_id=city,
+        kind=ConsumerKind.INDUSTRIAL,
+        inn=None,
+        on=RECORDED_ON,
+    )
+    contract_id = save_contract(
+        connection,
+        consumer_id=consumer_id,
+        number=CONTRACT,
+        signed_on=RECORDED_ON,
+        on=RECORDED_ON,
+    )
+    point_id = save_point(
+        connection,
+        contract_id=contract_id,
+        code=POINT_REGION_POINT,
+        address=ADDRESS,
+        on=RECORDED_ON,
+    )
+    save_point_group(
+        connection,
+        point_id=point_id,
+        effective_from=RECORDED_ON,
+        group=POINT_REGION_GROUP,
+    )
+    save_monthly_fact(
+        connection,
+        contract_id=contract_id,
+        point_id=point_id,
+        year=YEAR,
+        month=JANUARY,
+        volume=POINT_REGION_VOLUME,
+        overlimit_110=ZERO,
+        overlimit_150=ZERO,
+        kind=ConsumerKind.INDUSTRIAL,
+    )
 
 
 def _open(tmp_path: Path) -> sqlite3.Connection:

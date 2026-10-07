@@ -66,6 +66,32 @@ ODD_DATES = 0
 POPULATION_COUNT = 1
 NO_POPULATION = 0
 SURCHARGE_ABSENT = None
+# Покупатель в городе, точка с кодом области: спецнадбавка берётся у точки.
+POINT_REGION_CODE = "47"
+CITY_REGION_CODE = "78"
+POINT_REGION_NAME = "Ленинградская область"
+CITY_REGION_NAME = "Санкт-Петербург"
+POINT_REGION_POINT = "47-1-1"
+POINT_REGION_BUYER = "c-78"
+POINT_REGION_GROUP = Group.G7
+POINT_REGION_VOLUME = Decimal("1.000")
+POINT_REGION_TARIFF = Decimal("100.00")
+CITY_SURCHARGE = Decimal("256.78")
+OBLAST_SURCHARGE = Decimal("374.50")
+POINT_REGION_NET = Decimal("474.50")
+# Два договора одной точки: 0,001 × 256,78 даёт 0,26, сумма объёмов — 0,51.
+SPLIT_POINT = "78-1-1"
+SPLIT_BUYER = "c-split"
+SPLIT_CONTRACT = "Д-а"
+SPLIT_CONTRACT_OTHER = "Д-б"
+SPLIT_GROUP = Group.G7
+SPLIT_VOLUME = Decimal("0.001")
+SPLIT_TARIFF = Decimal("100.00")
+SPLIT_RATE = Decimal("256.78")
+SPLIT_NET = Decimal("0.72")
+SPLIT_SURCHARGE_NET = Decimal("0.52")
+SPLIT_SNAPSHOT_VOLUME = Decimal("0.002")
+SPLIT_LINES = 1
 EMPTY_COST = None
 
 

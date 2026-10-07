@@ -193,8 +193,8 @@ SEARCH_REGION = RegionSeed("78", "Город")
 SEARCH_KIND = ConsumerKind.INDUSTRIAL
 SEARCH_ON = date(2026, 1, 1)
 SEARCH_PARTIES = (
-    SearchParty("c-n", "Завод Север", "7811111111", "Д-север", "т-север", "Химиков ул., д.10"),
-    SearchParty("c-s", "Южный цех", "7822222222", "Д-юг", "т-юг", "Южная ул., д.2"),
+    SearchParty("c-n", "Завод Север", "7811111111", "Д-север", "78-север", "Химиков ул., д.10"),
+    SearchParty("c-s", "Южный цех", "7822222222", "Д-юг", "78-юг", "Южная ул., д.2"),
 )
 NAME_FRAGMENT = "север"
 INN_FRAGMENT = "781111"
@@ -214,6 +214,7 @@ CONTRACTS_BEFORE = 0
 POINTS_BEFORE = 0
 POINT_NAME_COLUMN = 1
 POINT_CODE_COLUMN = 3
+POINT_REGION_COLUMN = 4
 GENERATED_CODES = ("000001", "000002")
 ADDED_NAMES = ("Первый завод", "Второй завод")
 ADDED_COUNT = 2

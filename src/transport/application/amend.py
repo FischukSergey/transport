@@ -14,6 +14,7 @@ from transport.application.catalog import (
     NEED_CHOICE,
     NEED_NAME,
     NEED_NUMBER,
+    POINT_REGION,
     POINT_TAKEN,
 )
 from transport.application.plan_load import refresh_plan_group
@@ -22,6 +23,7 @@ from transport.domain.month import ConsumerKind
 from transport.storage.repository import (
     InnTaken,
     NumberTaken,
+    RegionMissing,
     add_consumer,
     add_contract,
     add_point,
@@ -120,6 +122,9 @@ def save_amendment_document(
     except InnTaken:
         connection.rollback()
         raise AmendmentRejected(INN_TAKEN) from None
+    except RegionMissing:
+        connection.rollback()
+        raise AmendmentRejected(POINT_REGION) from None
     except NumberTaken:
         connection.rollback()
         if document.kind in (NEW_POINT, TRANSFER, VOLUME):

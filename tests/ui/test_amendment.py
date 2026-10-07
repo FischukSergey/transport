@@ -43,6 +43,8 @@ from tests.application.amend_data import (
     NEW_POINT_CODE,
     NEXT_TEXT,
     NEXT_VOLUME_TEXT,
+    OBLAST_POINT,
+    OBLAST_REGION_LABEL,
     ONE_CARD,
     ONE_CONTRACT,
     ONE_POINT,
@@ -56,6 +58,7 @@ from tests.application.amend_data import (
     PLAN_STATED_COLUMN,
     PLAN_VOLUME_COLUMN,
     POINT_CODE,
+    POINT_REGION_LABEL,
     RENAMED,
     SECOND_CODE,
     SMALL_GROUP,
@@ -121,6 +124,9 @@ def test_new_buyer_receives_volume_and_january_group(qapp: QApplication, tmp_pat
         _data(window, "amendmentConsumerKind", AMEND_KIND.value)
         _text(window, "amendmentContractNumber", CONTRACT_NUMBER)
         _text(window, "amendmentPointCode", POINT_CODE)
+        point_region = window.findChild(QLineEdit, "amendmentPointRegion")
+        assert point_region is not None and point_region.isReadOnly()
+        assert point_region.text() == POINT_REGION_LABEL
         _text(window, "amendmentAddress", ADDRESS)
         _text(window, "amendmentVolume", VOLUME_TEXT)
         _data(window, "amendmentGroup", STATED_DIFFERENT.value)
@@ -135,6 +141,7 @@ def test_new_buyer_receives_volume_and_january_group(qapp: QApplication, tmp_pat
         assert buyer.region_code == CITY_CODE
         assert len(catalog.search_contracts("")) == ONE_CONTRACT
         assert catalog.points()[0].code == POINT_CODE
+        assert catalog.points()[0].region_code == CITY_CODE
         assert group_on(catalog.connection(), point.point_id, GROUP_ON) == SMALL_GROUP.value
         assert _label(window, "amendmentNote") == FILE_NOT_READ
         assert _label(window, "amendmentMessage") == (
@@ -145,6 +152,7 @@ def test_new_buyer_receives_volume_and_january_group(qapp: QApplication, tmp_pat
         assert _entry(window, "amendmentInn") == ""
         assert _entry(window, "amendmentContractNumber") == ""
         assert _entry(window, "amendmentPointCode") == ""
+        assert _entry(window, "amendmentPointRegion") == ""
         assert _entry(window, "amendmentVolume") == ""
         assert _data_of(window, "amendmentRegion") is None
         assert _data_of(window, "amendmentGroup") == ""
@@ -171,6 +179,21 @@ def test_new_buyer_receives_volume_and_january_group(qapp: QApplication, tmp_pat
         assert mismatch.rowCount() == CLOSED_MISMATCHES
         assert group_on(catalog.connection(), point.point_id, GROUP_ON) == STATED_DIFFERENT.value
         _assert_quiet(catalog)
+    finally:
+        catalog.close()
+
+
+def test_picked_point_shows_its_own_region(qapp: QApplication, tmp_path: Path) -> None:
+    catalog = _catalog(tmp_path)
+    try:
+        buyer_id = _buyer(catalog, FIRST_CODE, BUYER_NAME)
+        _contract(catalog, buyer_id, CONTRACT_NUMBER)
+        _point(catalog, CONTRACT_NUMBER, OBLAST_POINT)
+        window = LoadWindow(catalog)
+        _kind(window, VOLUME)
+        region = window.findChild(QLineEdit, "amendmentPointRegion")
+        assert region is not None and region.isReadOnly()
+        assert region.text() == OBLAST_REGION_LABEL
     finally:
         catalog.close()
 

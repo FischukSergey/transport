@@ -8,8 +8,8 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-# 9 — строка допсоглашения хранит точку, если документ её касается.
-SCHEMA_VERSION = 9
+# 10 — у точки свой регион: первые две цифры её кода.
+SCHEMA_VERSION = 10
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS point (
     contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
     code TEXT NOT NULL,
     address TEXT NOT NULL,
+    region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
     created_on TEXT NOT NULL,
     updated_on TEXT NOT NULL,
     deleted_on TEXT,

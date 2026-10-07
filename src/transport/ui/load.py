@@ -224,11 +224,17 @@ class LoadWindow(QMainWindow):
         self._new_name = _name_box("amendmentNewName")
         self._amendment_point_code = QLineEdit()
         self._amendment_point_code.setObjectName("amendmentPointCode")
+        self._amendment_point_code.textChanged.connect(self._show_point_region)
+        self._amendment_point_region = QLineEdit()
+        self._amendment_point_region.setObjectName("amendmentPointRegion")
+        self._amendment_point_region.setReadOnly(True)
         self._amendment_address = _address_box()
+        self._point_rows: list = []
         self._point_search, self._amendment_point = _picker(
             "amendmentPointSearch", "amendmentPoint"
         )
         self._point_search.textChanged.connect(self._fill_points)
+        self._amendment_point.currentIndexChanged.connect(self._show_point_region)
         self._target_choice: int | None = None
         self._target_rows: list = []
         self._target_search, self._target_table, self._target_fields = _lookup(
@@ -259,6 +265,7 @@ class LoadWindow(QMainWindow):
         _fit(self._amendment_consumer_kind, KIND_CHARS)
         _fit(self._amendment_contract_number, CODE_CHARS)
         _fit(self._amendment_point_code, CODE_CHARS)
+        _fit(self._amendment_point_region, REGION_CHARS)
         _fit(self._point_search, SEARCH_CHARS)
         _fit(self._amendment_point, SEARCH_CHARS)
         _fit(self._amendment_volume, VOLUME_CHARS)
@@ -288,6 +295,7 @@ class LoadWindow(QMainWindow):
         form.addRow("Старое наименование", self._old_name)
         form.addRow("Новое наименование", self._new_name)
         form.addRow("Код точки", self._amendment_point_code)
+        form.addRow("Регион точки", self._amendment_point_region)
         form.addRow("Адрес", self._amendment_address)
         form.addRow("Точка", self._point_fields)
         form.addRow("Договор покупателя", self._target_fields)
@@ -320,6 +328,7 @@ class LoadWindow(QMainWindow):
         self._amendment_form.setRowVisible(
             self._amendment_point_code, kind in (NEW_BUYER, NEW_CONTRACT, NEW_POINT)
         )
+        self._amendment_form.setRowVisible(self._amendment_point_region, kind != RENAME)
         self._amendment_form.setRowVisible(
             self._amendment_address, kind in (NEW_BUYER, NEW_CONTRACT, NEW_POINT, RENAME_POINT)
         )
@@ -337,6 +346,7 @@ class LoadWindow(QMainWindow):
             self._fill_points()
         if kind == TRANSFER:
             self._reload_targets()
+        self._show_point_region()
 
     def _reload_consumers(self) -> None:
         self._consumer_rows = self._catalog.find_consumers(self._consumer_search.text().strip())
@@ -380,11 +390,22 @@ class LoadWindow(QMainWindow):
         self._old_name.setText("" if party is None else party[1])
 
     def _fill_points(self) -> None:
-        rows = self._catalog.find_points(self._point_search.text().strip())
+        self._point_rows = self._catalog.find_points(self._point_search.text().strip())
         _fill_combo(
             self._amendment_point,
-            [(f"{row.code} {row.address}", row.point_id) for row in rows],
+            [(f"{row.code} {row.address}", row.point_id) for row in self._point_rows],
         )
+        self._show_point_region()
+
+    def _show_point_region(self) -> None:
+        kind = self._amendment_kind.currentData()
+        if kind in (NEW_BUYER, NEW_CONTRACT, NEW_POINT):
+            code = self._amendment_point_code.text()
+        else:
+            chosen = _optional_int(self._amendment_point.currentData())
+            found = next((row for row in self._point_rows if row.point_id == chosen), None)
+            code = "" if found is None else found.code
+        self._amendment_point_region.setText(self._catalog.point_region_label(code))
 
     def _reload_targets(self) -> None:
         self._target_rows = self._catalog.search_contract_choices(
@@ -466,6 +487,7 @@ class LoadWindow(QMainWindow):
         self._amendment_inn.clear()
         self._amendment_contract_number.clear()
         self._amendment_point_code.clear()
+        self._amendment_point_region.clear()
         self._amendment_address.clear()
         self._amendment_volume.clear()
         self._amendment_region.setCurrentIndex(-1)

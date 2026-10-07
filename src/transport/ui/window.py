@@ -234,7 +234,9 @@ class DirectoryWindow(QMainWindow):
         return page
 
     def _points_tab(self) -> QWidget:
-        self._point_table = _table(["Потребитель", "Наименование", "Договор", "Номер", "Адрес"])
+        self._point_table = _table(
+            ["Потребитель", "Наименование", "Договор", "Номер", "Регион", "Адрес"]
+        )
         self._point_table.setObjectName("pointTable")
         self._point_table.itemSelectionChanged.connect(self._pick_point)
         self._point_search = _search(self._search_points, "pointSearch", "Номер или адрес точки")
@@ -256,6 +258,10 @@ class DirectoryWindow(QMainWindow):
         self._point_caption.setObjectName("pointContract")
         self._point_code = QLineEdit()
         self._point_code.setObjectName("pointNumber")
+        self._point_code.textChanged.connect(self._show_point_region)
+        self._point_region = QLineEdit()
+        self._point_region.setObjectName("pointRegion")
+        self._point_region.setReadOnly(True)
         self._point_address = QPlainTextEdit()
         self._point_address.setObjectName("pointAddress")
         self._point_address.setTabChangesFocus(True)
@@ -268,6 +274,7 @@ class DirectoryWindow(QMainWindow):
         form = QFormLayout()
         form.addRow("Договор", self._point_caption)
         form.addRow("Номер", self._point_code)
+        form.addRow("Регион", self._point_region)
         form.addRow("Адрес", self._point_address)
         self._point_message = QLabel()
         self._point_message.setObjectName("pointMessage")
@@ -524,6 +531,7 @@ class DirectoryWindow(QMainWindow):
         self._point_message.setText("")
         self._point_caption.setText(NO_CONTRACT)
         self._point_code.clear()
+        self._point_region.clear()
         self._point_address.clear()
         self._point_contract_search.clear()
         self._fill_point_contracts("")
@@ -542,6 +550,7 @@ class DirectoryWindow(QMainWindow):
         self._point_message.setText("")
         self._point_caption.setText(row.contract_number)
         self._point_code.setText(row.code)
+        self._show_point_region()
         self._point_address.setPlainText(row.address)
         self._point_party.hide()
         self._point_card.show()
@@ -584,6 +593,9 @@ class DirectoryWindow(QMainWindow):
         self._point_card.hide()
         self._reload_points()
         self._select_point(code)
+
+    def _show_point_region(self) -> None:
+        self._point_region.setText(self._catalog.point_region_label(self._point_code.text()))
 
     def _search_point_contracts(self, text: str) -> None:
         self._fill_point_contracts(text.strip())
@@ -692,7 +704,14 @@ class DirectoryWindow(QMainWindow):
         _fill(
             self._point_table,
             [
-                (row.consumer_code, row.consumer_name, row.contract_number, row.code, row.address)
+                (
+                    row.consumer_code,
+                    row.consumer_name,
+                    row.contract_number,
+                    row.code,
+                    row.region_code,
+                    row.address,
+                )
                 for row in rows
             ],
         )

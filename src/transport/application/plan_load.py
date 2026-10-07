@@ -9,11 +9,13 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from transport.application.catalog import POINT_REGION
 from transport.application.sample import CITY_CODE, OBLAST_CODE
 from transport.domain.group import Group, group_of
 from transport.ingest.annual import PlanLine, read_annual_plan
 from transport.parameters import GROUP_ABOVE, GROUP_UPPER_INCLUSIVE
 from transport.storage.repository import (
+    RegionMissing,
     add_consumer,
     add_contract,
     add_point,
@@ -233,13 +235,16 @@ def _write_line(
     contract_id = contract[0]
     point_id = point_id_by_code(connection, line.point)
     if point_id is None:
-        add_point(
-            connection,
-            contract_id=contract_id,
-            code=line.point,
-            address=line.address,
-            on=on,
-        )
+        try:
+            add_point(
+                connection,
+                contract_id=contract_id,
+                code=line.point,
+                address=line.address,
+                on=on,
+            )
+        except RegionMissing:
+            return POINT_REGION
         point_id = point_id_by_code(connection, line.point)
     if point_id is None:
         return "Точка не записана."

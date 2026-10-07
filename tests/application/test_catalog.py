@@ -94,6 +94,7 @@ def test_directory_is_saved_by_hand(tmp_path: Path) -> None:
         assert catalog.consumers()[0].inn == case.inn
         assert catalog.contracts()[0].number == case.contract_number
         assert catalog.points()[0].code == case.point_code
+        assert catalog.points()[0].region_code == case.regions[0].code
         assert catalog.points()[0].address == case.point_address
         assert catalog.points()[0].contract_number == case.contract_number
         assert catalog.tariffs()[0].rate == case.tariff_rate

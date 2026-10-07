@@ -26,6 +26,11 @@ class LegacyParty:
 PREVIOUS_SCHEMA = 4
 # Номер схемы до кода точки в строке допсоглашения.
 AMENDMENT_SCHEMA = 8
+# Номер схемы до региона у точки.
+POINT_REGION_SCHEMA = 9
+POINT_REGION_CODE = "47"
+BUYER_REGION_CODE = "78"
+MIGRATED_POINT = "47-1-1"
 LEGACY_PLAN_VOLUME = "160.000"
 LEGACY_MONTH_VOLUME = "10.000"
 LEGACY_PLAN_MONTH = 1

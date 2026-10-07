@@ -7,10 +7,14 @@ import pytest
 from tests.ingest.fact_data import FACT_SCHEMA, LEGACY_FACT_MONTH, LEGACY_FACT_VOLUME, YEAR
 from tests.storage.data import (
     AMENDMENT_SCHEMA,
+    BUYER_REGION_CODE,
     LEGACY_MONTH_VOLUME,
     LEGACY_PARTY,
     LEGACY_PLAN_MONTH,
     LEGACY_PLAN_VOLUME,
+    MIGRATED_POINT,
+    POINT_REGION_CODE,
+    POINT_REGION_SCHEMA,
     PREVIOUS_SCHEMA,
     RATE_ON_FIRST,
 )
@@ -43,6 +47,7 @@ def test_empty_file_receives_schema(tmp_path: Path) -> None:
             "contract_id",
             "code",
             "address",
+            "region_id",
             "created_on",
             "updated_on",
             "deleted_on",
@@ -282,6 +287,68 @@ def test_version_4_plan_keeps_volume_and_gains_contract(tmp_path: Path) -> None:
         monthly = connection.execute("SELECT contract_id, volume FROM monthly_plan").fetchone()
         assert annual == (1, 1, LEGACY_PLAN_VOLUME, None)
         assert monthly == (1, LEGACY_MONTH_VOLUME)
+    finally:
+        connection.close()
+
+
+def test_version_9_point_receives_region_from_its_code(tmp_path: Path) -> None:
+    path = tmp_path / "point-v9.sqlite"
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        """
+        CREATE TABLE region (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE consumer (
+            id INTEGER PRIMARY KEY,
+            region_id INTEGER NOT NULL REFERENCES region (id)
+        );
+        CREATE TABLE contract (
+            id INTEGER PRIMARY KEY,
+            consumer_id INTEGER NOT NULL REFERENCES consumer (id)
+        );
+        CREATE TABLE point (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id),
+            code TEXT NOT NULL UNIQUE,
+            address TEXT NOT NULL,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT
+        );
+        """
+    )
+    raw.execute(
+        "INSERT INTO region (id, code, name) VALUES (1, ?, 'Город'), (2, ?, 'Область')",
+        (BUYER_REGION_CODE, POINT_REGION_CODE),
+    )
+    raw.execute("INSERT INTO consumer (id, region_id) VALUES (1, 1)")
+    raw.execute("INSERT INTO contract (id, consumer_id) VALUES (1, 1)")
+    raw.execute(
+        """
+        INSERT INTO point (id, contract_id, code, address, created_on, updated_on)
+        VALUES (1, 1, ?, '', ?, ?)
+        """,
+        (MIGRATED_POINT, RATE_ON_FIRST.isoformat(), RATE_ON_FIRST.isoformat()),
+    )
+    raw.execute(f"PRAGMA user_version = {POINT_REGION_SCHEMA}")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    try:
+        row = connection.execute(
+            """
+            SELECT region.code
+            FROM point
+            JOIN region ON region.id = point.region_id
+            """
+        ).fetchone()
+        assert row is not None
+        assert row[0] == POINT_REGION_CODE
+        assert "region_id" in _columns(connection, "point")
     finally:
         connection.close()
 

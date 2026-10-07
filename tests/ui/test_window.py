@@ -31,6 +31,7 @@ from tests.application.data import (
     NAME_FRAGMENT,
     POINT_CODE_COLUMN,
     POINT_NAME_COLUMN,
+    POINT_REGION_COLUMN,
     POINTS_BEFORE,
     POPULATION_REFUSAL,
     SCREEN_DATE_FORMAT,
@@ -285,15 +286,21 @@ def test_point_add_finds_the_contract(qapp: QApplication, tmp_path: Path) -> Non
         search.setText(NAME_FRAGMENT)
         found.selectRow(SEARCH_ROW)
         number.setText(SEARCH_PARTIES[0].point_code)
+        region = window.findChild(QLineEdit, "pointRegion")
+        assert region is not None and region.isReadOnly()
+        assert region.text() == f"{SEARCH_REGION.code} {SEARCH_REGION.name}"
         address.setPlainText(SEARCH_PARTIES[0].point_address)
         save.click()
         assert card.isHidden()
         assert table.rowCount() == EDITED_COUNT
         assert _shown(table, SEARCH_ROW, POINT_NAME_COLUMN) == SEARCH_PARTIES[0].name
         assert _shown(table, SEARCH_ROW, POINT_CODE_COLUMN) == SEARCH_PARTIES[0].point_code
+        assert _shown(table, SEARCH_ROW, POINT_REGION_COLUMN) == SEARCH_REGION.code
         table.selectRow(SEARCH_ROW)
         edit.click()
         assert number.text() == SEARCH_PARTIES[0].point_code
+        assert region is not None and region.isReadOnly()
+        assert region.text() == f"{SEARCH_REGION.code} {SEARCH_REGION.name}"
         assert address.toPlainText() == SEARCH_PARTIES[0].point_address
         assert party_box.isHidden()
     finally:

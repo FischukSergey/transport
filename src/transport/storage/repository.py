@@ -19,10 +19,21 @@ _GROUP_ORDER = {group.value: index for index, group in enumerate(Group)}
 SEARCH_LIMIT = 50
 
 _ContractRow = tuple[int, int, str, str, str, str, str, str]
-_PointRow = tuple[int, str, str, str, str, str, int, int]
+_PointRow = tuple[int, str, str, str, str, str, str, str, int, int]
 
 # Код потребителя назначает программа: следующая целая строка не короче шести знаков.
 CONSUMER_CODE_WIDTH = 6
+
+# Первые две цифры кода точки — код региона. Карточка этот код не выбирает.
+POINT_REGION_DIGITS = 2
+
+
+def point_region_code(code: str) -> str:
+    """Код региона точки: первые две цифры её номера. Иначе пустая строка."""
+    prefix = code.strip()[:POINT_REGION_DIGITS]
+    if len(prefix) == POINT_REGION_DIGITS and prefix.isdigit():
+        return prefix
+    return ""
 
 
 def save_region(connection: sqlite3.Connection, *, code: str, name: str) -> int:
@@ -113,18 +124,22 @@ def save_point(
     Смена договора переносит точку к другому потребителю. Дату появления не меняет.
     """
     stamp = on.isoformat()
+    region_id = _point_region_id(connection, code)
     return _write(
         connection,
         """
-        INSERT INTO point (contract_id, code, address, created_on, updated_on)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO point (
+            contract_id, code, address, region_id, created_on, updated_on
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT (code) DO UPDATE SET
             contract_id = excluded.contract_id,
             address = excluded.address,
+            region_id = excluded.region_id,
             updated_on = excluded.updated_on
         RETURNING id
         """,
-        (contract_id, code, address, stamp, stamp),
+        (contract_id, code, address, region_id, stamp, stamp),
     )
 
 
@@ -235,17 +250,23 @@ def add_point(
     address: str,
     on: date,
 ) -> None:
-    """Новая точка. Занятый номер чужую точку не переписывает."""
+    """Новая точка. Занятый номер чужую точку не переписывает.
+
+    Регион берётся из первых двух цифр кода и с карточки не выбирается.
+    """
     _require_free_point_code(connection, code, None)
     stamp = on.isoformat()
+    region_id = _point_region_id(connection, code)
     _write(
         connection,
         """
-        INSERT INTO point (contract_id, code, address, created_on, updated_on)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO point (
+            contract_id, code, address, region_id, created_on, updated_on
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
         RETURNING id
         """,
-        (contract_id, code, address, stamp, stamp),
+        (contract_id, code, address, region_id, stamp, stamp),
     )
 
 
@@ -258,15 +279,19 @@ def edit_point(
     address: str,
     on: date,
 ) -> None:
-    """Правит выбранную точку. Тот же номер может сменить договор, чужой номер не занимает."""
+    """Правит выбранную точку. Тот же номер может сменить договор, чужой номер не занимает.
+
+    Смена кода пересчитывает регион по первым двум цифрам.
+    """
     _require_free_point_code(connection, code, point_id)
+    region_id = _point_region_id(connection, code)
     connection.execute(
         """
         UPDATE point
-        SET contract_id = ?, code = ?, address = ?, updated_on = ?
+        SET contract_id = ?, code = ?, address = ?, region_id = ?, updated_on = ?
         WHERE id = ? AND deleted_on IS NULL
         """,
-        (contract_id, code, address, on.isoformat(), point_id),
+        (contract_id, code, address, region_id, on.isoformat(), point_id),
     )
 
 
@@ -572,6 +597,7 @@ class PeriodFact:
     def __init__(
         self,
         point_id: int,
+        contract_id: int,
         point_code: str,
         consumer_id: int,
         consumer_code: str,
@@ -584,6 +610,7 @@ class PeriodFact:
         overlimit_150: str | None,
     ) -> None:
         self.point_id = point_id
+        self.contract_id = contract_id
         self.point_code = point_code
         self.consumer_id = consumer_id
         self.consumer_code = consumer_code
@@ -613,16 +640,21 @@ class PeriodTransition:
 
 
 def period_facts(connection: sqlite3.Connection, year: int, month: int) -> list[PeriodFact]:
-    """Факт и входящий остаток с января по месяц. Месяцы без строки не добавляет."""
+    """Факт и входящий остаток с января по месяц. Месяцы без строки не добавляет.
+
+    Регион строки — регион точки. Спецнадбавка берёт его, не регион покупателя.
+    Договор строки — договор факта, не договор карточки точки.
+    """
     rows = connection.execute(
         """
         SELECT
             point.id,
+            monthly_fact.contract_id,
             point.code,
             consumer.id,
             consumer.code,
             consumer.kind,
-            consumer.region_id,
+            point.region_id,
             monthly_fact.month,
             monthly_fact.row_kind,
             monthly_fact.volume,
@@ -640,16 +672,17 @@ def period_facts(connection: sqlite3.Connection, year: int, month: int) -> list[
     return [
         PeriodFact(
             int(row[0]),
-            str(row[1]),
-            int(row[2]),
-            str(row[3]),
+            int(row[1]),
+            str(row[2]),
+            int(row[3]),
             str(row[4]),
-            int(row[5]),
+            str(row[5]),
             int(row[6]),
-            str(row[7]),
+            int(row[7]),
             str(row[8]),
-            None if row[9] is None else str(row[9]),
+            str(row[9]),
             None if row[10] is None else str(row[10]),
+            None if row[11] is None else str(row[11]),
         )
         for row in rows
     ]
@@ -973,7 +1006,11 @@ class InnTaken(Exception):
 
 
 class NumberTaken(Exception):
-    """Номер договора или код точки уже занимает другая строка."""
+    """Номер договора или код точки уже занимает другую строку."""
+
+
+class RegionMissing(Exception):
+    """Первые две цифры кода точки не совпали с кодом региона. Точка не пишется."""
 
 
 class RateDateRejected(Exception):
@@ -1262,12 +1299,15 @@ def _points(
             point.id,
             point.code,
             point.address,
+            region.code,
+            region.name,
             contract.number,
             consumer.code,
             consumer.name,
             contract.id,
             consumer.id
         FROM point
+        JOIN region ON region.id = point.region_id
         JOIN contract ON contract.id = point.contract_id
         JOIN consumer ON consumer.id = contract.consumer_id
         WHERE point.deleted_on IS NULL
@@ -1292,11 +1332,20 @@ def _points(
             str(row[3]),
             str(row[4]),
             str(row[5]),
-            int(row[6]),
-            int(row[7]),
+            str(row[6]),
+            str(row[7]),
+            int(row[8]),
+            int(row[9]),
         )
         for row in rows
     ]
+
+
+def _point_region_id(connection: sqlite3.Connection, code: str) -> int:
+    found = region_id_by_code(connection, point_region_code(code))
+    if found is None:
+        raise RegionMissing
+    return found
 
 
 def list_tariffs(connection: sqlite3.Connection) -> list[tuple[int, str, str, str]]:

@@ -66,6 +66,18 @@ class OpeningBalance:
         self.volume = volume
 
 
+class SnapshotContract:
+    def __init__(
+        self,
+        volume: Decimal,
+        overlimit_110: Decimal,
+        overlimit_150: Decimal,
+    ) -> None:
+        self.volume = volume
+        self.overlimit_110 = overlimit_110
+        self.overlimit_150 = overlimit_150
+
+
 class SnapshotMonth:
     def __init__(
         self,
@@ -78,6 +90,7 @@ class SnapshotMonth:
         tariff: Decimal | None,
         tariff_new: Decimal | None,
         surcharge_rate: Decimal | None,
+        contracts: tuple[SnapshotContract, ...],
     ) -> None:
         self.month = month
         self.group = group
@@ -88,6 +101,7 @@ class SnapshotMonth:
         self.tariff = tariff
         self.tariff_new = tariff_new
         self.surcharge_rate = surcharge_rate
+        self.contracts = contracts
 
 
 class SnapshotPoint:
@@ -164,11 +178,19 @@ class _Mark:
         self.direction = direction
 
 
+class _Slice:
+    def __init__(self) -> None:
+        self.volume = Decimal(0)
+        self.overlimit_110 = Decimal(0)
+        self.overlimit_150 = Decimal(0)
+
+
 class _Volumes:
     def __init__(self) -> None:
         self.volume = Decimal(0)
         self.overlimit_110 = Decimal(0)
         self.overlimit_150 = Decimal(0)
+        self.contracts: dict[int, _Slice] = {}
 
 
 class _PointRows:
@@ -289,6 +311,7 @@ def _months(
                 tariff,
                 tariff_new,
                 surcharge,
+                _contract_volumes(volumes),
             )
         )
     return built
@@ -380,21 +403,9 @@ def _ordinary(
     with_vat: bool,
     vat_rate: Decimal | None,
 ) -> list[ChargeLine]:
-    coefficient_110, coefficient_150 = coefficients_of(point.kind)
     lines: list[ChargeLine] = []
     for month in point.months:
-        charges = month_charges(
-            month.volume,
-            month.overlimit_110,
-            month.overlimit_150,
-            tariff=month.tariff,
-            consumer=point.kind,
-            surcharge_rate=month.surcharge_rate,
-            coefficient_110=coefficient_110,
-            coefficient_150=coefficient_150,
-            with_vat=with_vat,
-            vat_rate=vat_rate,
-        )
+        charges = _priced(point, month, month.tariff, with_vat=with_vat, vat_rate=vat_rate)
         lines.append(ChargeLine(point.code, month.month, ROUTE_MONTH, charges, None))
     return lines
 
@@ -405,6 +416,7 @@ def _transition(
     with_vat: bool,
     vat_rate: Decimal | None,
 ) -> list[ChargeLine]:
+    """Тариф перехода считает по объёму точки. Плату по нему округляет по договорам."""
     start = point.months[0].month if point.transition_from is None else point.transition_from
     prior = [month for month in point.months if month.month < start]
     after = [month for month in point.months if month.month >= start]
@@ -418,26 +430,97 @@ def _transition(
         with_vat=with_vat,
         vat_rate=vat_rate,
     )
-    return [
-        ChargeLine(point.code, month.month, ROUTE_TRANSITION, line.charges, line)
-        for month, line in zip(after, calculated, strict=True)
-    ]
+    lines: list[ChargeLine] = []
+    for month, line in zip(after, calculated, strict=True):
+        charges = line.charges
+        traced = line
+        if charges is not None and not line.gap:
+            rate = line.tariff if line.applied else Decimal(0)
+            charges = _priced(point, month, rate, with_vat=with_vat, vat_rate=vat_rate)
+            traced = TransitionLine(line.tariff, line.applied, charges, line.trace, gap=line.gap)
+        lines.append(ChargeLine(point.code, month.month, ROUTE_TRANSITION, charges, traced))
+    return lines
 
 
 def _reimbursement(point: SnapshotPoint) -> Reimbursement:
-    result = year_end_reimbursement(
-        tuple(
-            YearMonth(
-                month.volume,
-                month.overlimit_110,
-                month.overlimit_150,
-                month.tariff,
-                month.tariff_new,
+    """Каждый договор месяца округляет отдельно. Сумму собирает возмещение."""
+    months: list[YearMonth] = []
+    for month in point.months:
+        for item in _slices(month):
+            months.append(
+                YearMonth(
+                    item.volume,
+                    item.overlimit_110,
+                    item.overlimit_150,
+                    month.tariff,
+                    month.tariff_new,
+                )
             )
-            for month in point.months
+    return Reimbursement(point.code, year_end_reimbursement(tuple(months)))
+
+
+def _priced(
+    point: SnapshotPoint,
+    month: SnapshotMonth,
+    tariff: Decimal | None,
+    *,
+    with_vat: bool,
+    vat_rate: Decimal | None,
+) -> MonthCharges:
+    """Округляет каждый договор и складывает уже округлённые суммы.
+
+    Объём снимка остаётся суммой договоров. Ставка месяца одна на точку.
+    """
+    coefficient_110, coefficient_150 = coefficients_of(point.kind)
+    parts = [
+        month_charges(
+            item.volume,
+            item.overlimit_110,
+            item.overlimit_150,
+            tariff=tariff,
+            consumer=point.kind,
+            surcharge_rate=month.surcharge_rate,
+            coefficient_110=coefficient_110,
+            coefficient_150=coefficient_150,
+            with_vat=with_vat,
+            vat_rate=vat_rate,
         )
+        for item in _slices(month)
+    ]
+    return _add_charges(parts)
+
+
+def _slices(month: SnapshotMonth) -> tuple[SnapshotContract, ...]:
+    if month.contracts:
+        return month.contracts
+    return (SnapshotContract(month.volume, month.overlimit_110, month.overlimit_150),)
+
+
+def _add_charges(parts: list[MonthCharges]) -> MonthCharges:
+    if len(parts) == 1:
+        return parts[0]
+    volume = sum((part.volume for part in parts), Decimal(0))
+    if any(part.gap for part in parts):
+        return MonthCharges(volume, None, None, None, None, net=None, vat=None, gap=True)
+    surcharges = [part.surcharge for part in parts if part.surcharge is not None]
+    vats = [part.vat for part in parts if part.vat is not None]
+    return MonthCharges(
+        volume,
+        sum((part.base or Decimal(0) for part in parts), Decimal(0)),
+        sum((part.overlimit_110 or Decimal(0) for part in parts), Decimal(0)),
+        sum((part.overlimit_150 or Decimal(0) for part in parts), Decimal(0)),
+        sum(surcharges, Decimal(0)) if surcharges else None,
+        net=sum((part.net or Decimal(0) for part in parts), Decimal(0)),
+        vat=sum(vats, Decimal(0)) if vats else None,
+        gap=False,
     )
-    return Reimbursement(point.code, result)
+
+
+def _contract_volumes(volumes: _Volumes) -> tuple[SnapshotContract, ...]:
+    return tuple(
+        SnapshotContract(item.volume, item.overlimit_110, item.overlimit_150)
+        for _, item in sorted(volumes.contracts.items())
+    )
 
 
 def _transition_month(month: SnapshotMonth) -> TransitionMonth:
@@ -470,6 +553,14 @@ def _rows(facts: list[PeriodFact]) -> dict[int, _PointRows]:
         volumes.volume += Decimal(row.volume)
         volumes.overlimit_110 += Decimal(row.overlimit_110)
         volumes.overlimit_150 += Decimal(row.overlimit_150)
+        # Договор не схлопывается: объём месяца — сумма, доли остаются для округления.
+        slice_ = volumes.contracts.get(row.contract_id)
+        if slice_ is None:
+            slice_ = _Slice()
+            volumes.contracts[row.contract_id] = slice_
+        slice_.volume += Decimal(row.volume)
+        slice_.overlimit_110 += Decimal(row.overlimit_110)
+        slice_.overlimit_150 += Decimal(row.overlimit_150)
     return grouped
 
 

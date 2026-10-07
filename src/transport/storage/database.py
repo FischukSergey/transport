@@ -517,6 +517,63 @@ def _to_version_7(connection: sqlite3.Connection) -> None:
     )
 
 
+def _to_version_10(connection: sqlite3.Connection) -> None:
+    """Даёт точке регион по первым двум цифрам кода.
+
+    Адрес и договор не меняет. Точка без такого региона в справочнике остаётся
+    на прежней схеме: файл не переписывается.
+    """
+    if not _table_exists(connection, "point") or not _has_column(connection, "point", "code"):
+        return
+    if _has_column(connection, "point", "region_id"):
+        return
+    pending = connection.execute(
+        """
+        SELECT COUNT(*) FROM point
+        WHERE substr(code, 1, 2) NOT IN (SELECT code FROM region)
+        """
+    ).fetchone()
+    if pending is not None and int(pending[0]) != 0:
+        raise sqlite3.IntegrityError("у точки нет региона по первым двум цифрам кода")
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute(
+        """
+        CREATE TABLE point_v10 (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            code TEXT NOT NULL,
+            address TEXT NOT NULL,
+            region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT,
+            UNIQUE (code)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO point_v10 (
+            id, contract_id, code, address, region_id, created_on, updated_on, deleted_on
+        )
+        SELECT
+            point.id,
+            point.contract_id,
+            point.code,
+            point.address,
+            region.id,
+            point.created_on,
+            point.updated_on,
+            point.deleted_on
+        FROM point
+        JOIN region ON region.code = substr(point.code, 1, 2)
+        """
+    )
+    connection.execute("DROP TABLE point")
+    connection.execute("ALTER TABLE point_v10 RENAME TO point")
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
 def _to_version_9(connection: sqlite3.Connection) -> None:
     """Строка допсоглашения хранит точку, если документ её касается."""
     tables = connection.execute(
@@ -562,6 +619,7 @@ _STEPS = {
     7: _to_version_7,
     8: _to_version_8,
     9: _to_version_9,
+    10: _to_version_10,
 }
 
 
