@@ -5,6 +5,11 @@
 
 from pathlib import Path
 
+from transport.application.amend import (
+    AmendmentDocument,
+    AmendmentSaved,
+    save_amendment_document,
+)
 from transport.application.fact_load import FactLoad, load_month_fact
 from transport.application.plan_load import (
     OpenMismatch,
@@ -14,7 +19,12 @@ from transport.application.plan_load import (
     open_mismatches,
 )
 from transport.domain.group import Group
-from transport.storage.repository import count_runs, list_annual_plan, list_fact_discrepancies
+from transport.storage.repository import (
+    count_runs,
+    list_amendments,
+    list_annual_plan,
+    list_fact_discrepancies,
+)
 
 PLAN_SHEET = "В файле нет листа плана."
 FACT_SHEET = "В файле нет листа факта."
@@ -85,3 +95,10 @@ class Intake:
 
     def runs(self) -> int:
         return count_runs(self._connection)
+
+    def save_amendment(self, document: AmendmentDocument) -> AmendmentSaved:
+        """Пишет один документ допсоглашения. Прогон не создаёт."""
+        return save_amendment_document(self._connection, document)
+
+    def amendments(self) -> tuple[tuple[str, str, str, str, str], ...]:
+        return tuple(list_amendments(self._connection))

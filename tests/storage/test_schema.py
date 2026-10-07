@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from tests.ingest.fact_data import FACT_SCHEMA, LEGACY_FACT_MONTH, LEGACY_FACT_VOLUME, YEAR
 from tests.storage.data import (
+    AMENDMENT_SCHEMA,
     LEGACY_MONTH_VOLUME,
     LEGACY_PARTY,
     LEGACY_PLAN_MONTH,
@@ -281,6 +282,44 @@ def test_version_4_plan_keeps_volume_and_gains_contract(tmp_path: Path) -> None:
         monthly = connection.execute("SELECT contract_id, volume FROM monthly_plan").fetchone()
         assert annual == (1, 1, LEGACY_PLAN_VOLUME, None)
         assert monthly == (1, LEGACY_MONTH_VOLUME)
+    finally:
+        connection.close()
+
+
+def test_version_8_amendment_gains_the_point(tmp_path: Path) -> None:
+    path = tmp_path / "amend-v8.sqlite"
+    raw = sqlite3.connect(path)
+    raw.execute(
+        """
+        CREATE TABLE amendment (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL,
+            signed_on TEXT NOT NULL,
+            volume_before TEXT NOT NULL,
+            volume_after TEXT NOT NULL
+        )
+        """
+    )
+    raw.execute(
+        """
+        INSERT INTO amendment (contract_id, signed_on, volume_before, volume_after)
+        VALUES (1, ?, ?, ?)
+        """,
+        (RATE_ON_FIRST.isoformat(), LEGACY_PLAN_VOLUME, LEGACY_MONTH_VOLUME),
+    )
+    raw.execute(f"PRAGMA user_version = {AMENDMENT_SCHEMA}")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    try:
+        names = [str(row[1]) for row in connection.execute("PRAGMA table_info(amendment)")]
+        row = connection.execute(
+            "SELECT volume_before, volume_after, point_id FROM amendment"
+        ).fetchone()
+        assert "point_id" in names
+        assert row == (LEGACY_PLAN_VOLUME, LEGACY_MONTH_VOLUME, None)
+        assert connection.execute("PRAGMA user_version").fetchone() == (SCHEMA_VERSION,)
     finally:
         connection.close()
 

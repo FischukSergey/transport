@@ -270,6 +270,24 @@ def edit_point(
     )
 
 
+def list_amendments(connection: sqlite3.Connection) -> list[tuple[str, str, str, str, str]]:
+    """Документы допсоглашения: дата, договор, код точки, объём до и после.
+
+    В стоимость месяца не входят. У переименования покупателя кода точки нет.
+    """
+    rows = connection.execute(
+        """
+        SELECT amendment.signed_on, contract.number, COALESCE(point.code, ''),
+               amendment.volume_before, amendment.volume_after
+        FROM amendment
+        JOIN contract ON contract.id = amendment.contract_id
+        LEFT JOIN point ON point.id = amendment.point_id
+        ORDER BY amendment.signed_on, contract.number, point.code
+        """
+    ).fetchall()
+    return [(str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4])) for row in rows]
+
+
 def save_amendment(
     connection: sqlite3.Connection,
     *,
@@ -277,18 +295,28 @@ def save_amendment(
     signed_on: date,
     volume_before: Decimal,
     volume_after: Decimal,
+    point_id: int | None = None,
 ) -> int:
     return _write(
         connection,
         """
-        INSERT INTO amendment (contract_id, signed_on, volume_before, volume_after)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO amendment (
+            contract_id, signed_on, volume_before, volume_after, point_id
+        )
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (contract_id, signed_on) DO UPDATE SET
             volume_before = excluded.volume_before,
-            volume_after = excluded.volume_after
+            volume_after = excluded.volume_after,
+            point_id = excluded.point_id
         RETURNING id
         """,
-        (contract_id, signed_on.isoformat(), _decimal(volume_before), _decimal(volume_after)),
+        (
+            contract_id,
+            signed_on.isoformat(),
+            _decimal(volume_before),
+            _decimal(volume_after),
+            point_id,
+        ),
     )
 
 

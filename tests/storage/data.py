@@ -24,6 +24,8 @@ class LegacyParty:
 
 # Номер схемы до договора в плане.
 PREVIOUS_SCHEMA = 4
+# Номер схемы до кода точки в строке допсоглашения.
+AMENDMENT_SCHEMA = 8
 LEGACY_PLAN_VOLUME = "160.000"
 LEGACY_MONTH_VOLUME = "10.000"
 LEGACY_PLAN_MONTH = 1

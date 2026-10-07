@@ -8,8 +8,8 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
 # Номер в PRAGMA user_version. Пустой файл получает схему целиком и этот номер.
-# 8 — акцепт выбирает группу плана: из файла или расчётную.
-SCHEMA_VERSION = 8
+# 9 — строка допсоглашения хранит точку, если документ её касается.
+SCHEMA_VERSION = 9
 
 # Даты — ISO-текст. Объёмы, ставки и суммы — текст десятичной дроби, не REAL.
 # Логические поля — 0 и 1.
@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS amendment (
     signed_on TEXT NOT NULL,
     volume_before TEXT NOT NULL,
     volume_after TEXT NOT NULL,
+    point_id INTEGER REFERENCES point (id) ON DELETE RESTRICT,
     UNIQUE (contract_id, signed_on)
 );
 

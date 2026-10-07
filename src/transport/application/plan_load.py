@@ -312,6 +312,49 @@ def _groups(
     return mismatches
 
 
+def refresh_plan_group(connection: sqlite3.Connection, point_code: str, year: int) -> Group:
+    """Ставит группу точки на 1 января по сумме годовых объёмов. Прогон не создаёт.
+
+    Группа, указанная на вкладке и отличная от расчётной, открывает замечание.
+    Принятое решение сохраняется, пока группы файла и расчёт не изменились.
+    """
+    point_id = point_id_by_code(connection, point_code)
+    if point_id is None:
+        raise ValueError(point_code)
+    calculated = _calculated_group(connection, point_id, year)
+    stated = _stated_snapshot(connection, point_id, year)
+    decision = plan_group_decision(connection, point_id, year)
+    held = decision is not None and decision[0] == stated and decision[1] == calculated.value
+    if decision is not None and held:
+        chosen = Group(decision[2])
+    else:
+        if decision is not None:
+            delete_plan_group_decision(connection, point_id, year)
+        chosen = calculated
+    save_point_group(
+        connection,
+        point_id=point_id,
+        effective_from=date(year, 1, 1),
+        group=chosen,
+    )
+    remarks: list[tuple[int, str]] = []
+    if not held and stated:
+        for part in stated.split(","):
+            if part == calculated.value:
+                continue
+            remarks.append(
+                (
+                    0,
+                    (
+                        f"На вкладке группа {part}, "
+                        f"по сумме объёмов точки группа {calculated.value}."
+                    ),
+                )
+            )
+    replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=point_code, rows=remarks)
+    return chosen
+
+
 def _calculated_group(connection: sqlite3.Connection, point_id: int, year: int) -> Group:
     total = sum(
         (Decimal(volume) for volume in annual_volumes(connection, point_id, year)),

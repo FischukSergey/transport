@@ -517,6 +517,24 @@ def _to_version_7(connection: sqlite3.Connection) -> None:
     )
 
 
+def _to_version_9(connection: sqlite3.Connection) -> None:
+    """Строка допсоглашения хранит точку, если документ её касается."""
+    tables = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'amendment'"
+    ).fetchone()
+    if tables is None:
+        return
+    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(amendment)")}
+    if "point_id" in columns:
+        return
+    connection.execute(
+        """
+        ALTER TABLE amendment
+        ADD COLUMN point_id INTEGER REFERENCES point (id) ON DELETE RESTRICT
+        """
+    )
+
+
 def _to_version_8(connection: sqlite3.Connection) -> None:
     """Добавляет решение человека, какую группу плана оставить у точки."""
     groups = _group_list()
@@ -543,6 +561,7 @@ _STEPS = {
     6: _to_version_6,
     7: _to_version_7,
     8: _to_version_8,
+    9: _to_version_9,
 }
 
 
