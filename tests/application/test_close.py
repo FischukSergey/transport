@@ -1,5 +1,6 @@
 import ast
 import sqlite3
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -8,14 +9,29 @@ from tests.application.close_data import (
     CITY_REGION_CODE,
     CITY_REGION_NAME,
     CITY_SURCHARGE,
+    CLOSED_GROUP,
+    CLOSED_RUNS,
     CONTRACT,
     EMPTY_COST,
+    FEBRUARY,
+    FEBRUARY_RUN_MONTHS,
     GAP_CASES,
+    GAP_FLAG,
     JANUARY,
     JANUARY_NET,
+    JANUARY_RUN_MONTHS,
+    KEPT_VAT_TEXT,
+    LATER_RATE,
+    MISSING_TARIFF,
     OBLAST_SURCHARGE,
+    OCTOBER,
+    OCTOBER_ON,
+    ONE_LINE,
     OPENING_CASES,
     ORDINARY,
+    OVER_110,
+    OVER_150,
+    POINT,
     POINT_REGION_BUYER,
     POINT_REGION_CODE,
     POINT_REGION_GROUP,
@@ -29,7 +45,9 @@ from tests.application.close_data import (
     POPULATION_POINTS,
     RATE_CASES,
     RECORDED_ON,
+    REPLACEMENT_RATE,
     ROUTE_CASES,
+    SECOND_MONTH_RUNS,
     SNAPSHOT_MONTHS,
     SNAPSHOT_POINTS,
     SNAPSHOT_POPULATION,
@@ -48,6 +66,8 @@ from tests.application.close_data import (
     SPLIT_VOLUME,
     STORED_RUNS,
     SURCHARGE_ABSENT,
+    THREE_LINES,
+    TWO_LINES,
     VOLUME,
     YEAR,
     ZERO,
@@ -67,9 +87,17 @@ from transport.application.close import (
 )
 from transport.domain.month import ConsumerKind
 from transport.storage.database import open_database
+from transport.storage.rates import tariff_for_month
 from transport.storage.repository import (
+    ClosedRateRejected,
     RateDateRejected,
+    contract_by_number,
+    count_result_lines,
     insert_group_transitions,
+    lines_of_run,
+    point_id_by_code,
+    replace_month_run,
+    run_of,
     save_consumer,
     save_contract,
     save_monthly_fact,
@@ -132,7 +160,17 @@ def test_snapshot_is_assembled_from_the_database(tmp_path: Path) -> None:
         assert result.snapshot.openings == ()
         assert result.lines[0].charges is not None
         assert result.lines[0].charges.net == JANUARY_NET
-        assert _runs(connection) == STORED_RUNS
+        assert _runs(connection) == CLOSED_RUNS
+        stored = run_of(connection, YEAR, JANUARY)
+        assert stored is not None
+        assert stored.status == READY
+        written = lines_of_run(connection, YEAR, JANUARY)
+        assert len(written) == ONE_LINE
+        assert written[0].gap is GAP_FLAG
+        assert written[0].net is not None
+        assert Decimal(written[0].net) == JANUARY_NET
+        assert written[0].tariff is not None
+        assert Decimal(written[0].tariff) == point.months[0].tariff
     finally:
         connection.close()
 
@@ -149,7 +187,7 @@ def test_close_follows_the_load_mark(case: RouteCase, tmp_path: Path) -> None:
         assert point.months[0].tariff == case.tariff
         assert tuple(line.month for line in result.lines) == case.result_months
         _assert_route_money(result, case)
-        assert _runs(connection) == STORED_RUNS
+        assert _runs(connection) == CLOSED_RUNS
     finally:
         connection.close()
 
@@ -221,6 +259,109 @@ def test_missing_tariff_stays_empty(case: GapCase, tmp_path: Path) -> None:
         assert result.lines[0].charges.gap
         assert result.lines[0].charges.net is EMPTY_COST
         assert result.lines[0].charges.base is EMPTY_COST
+        assert _runs(connection) == STORED_RUNS
+    finally:
+        connection.close()
+
+
+def test_second_close_replaces_the_run(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _load(connection, ORDINARY)
+        close_month(connection, year=YEAR, month=JANUARY)
+        close_month(connection, year=YEAR, month=JANUARY)
+        written = lines_of_run(connection, YEAR, JANUARY)
+        assert _runs(connection) == CLOSED_RUNS
+        assert count_result_lines(connection) == ONE_LINE
+        assert len(written) == ONE_LINE
+        assert written[0].net is not None
+        assert Decimal(written[0].net) == JANUARY_NET
+    finally:
+        connection.close()
+
+
+def test_later_close_leaves_the_previous_run(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _load(connection, ORDINARY)
+        close_month(connection, year=YEAR, month=JANUARY)
+        _february_fact(connection)
+        close_month(connection, year=YEAR, month=FEBRUARY)
+        january = lines_of_run(connection, YEAR, JANUARY)
+        february = lines_of_run(connection, YEAR, FEBRUARY)
+        assert _runs(connection) == SECOND_MONTH_RUNS
+        assert tuple(line.month for line in january) == JANUARY_RUN_MONTHS
+        assert tuple(line.month for line in february) == FEBRUARY_RUN_MONTHS
+        assert len(january) == ONE_LINE
+        assert len(february) == TWO_LINES
+        assert count_result_lines(connection) == THREE_LINES
+        assert january[0].net is not None
+        assert Decimal(january[0].net) == JANUARY_NET
+    finally:
+        connection.close()
+
+
+def test_blocked_close_keeps_the_stored_run(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _load(connection, MISSING_TARIFF.book)
+        replace_month_run(
+            connection,
+            year=YEAR,
+            month=JANUARY,
+            status=READY,
+            with_vat=True,
+            vat_rate=KEPT_VAT_TEXT,
+            lines=(),
+        )
+        close_month(connection, year=YEAR, month=JANUARY)
+        stored = run_of(connection, YEAR, JANUARY)
+        assert stored is not None
+        assert stored.status == READY
+        assert stored.with_vat
+        assert stored.vat_rate == KEPT_VAT_TEXT
+        assert _runs(connection) == CLOSED_RUNS
+        assert lines_of_run(connection, YEAR, JANUARY) == []
+    finally:
+        connection.close()
+
+
+def test_closed_month_keeps_its_tariff(tmp_path: Path) -> None:
+    connection = _open(tmp_path)
+    try:
+        _load(connection, ORDINARY)
+        result = close_month(connection, year=YEAR, month=JANUARY)
+        kept = result.snapshot.points[0].months[0].tariff
+        assert kept is not None
+        with pytest.raises(ClosedRateRejected) as caught:
+            save_tariff(
+                connection,
+                group=CLOSED_GROUP,
+                effective_from=RECORDED_ON,
+                rate=REPLACEMENT_RATE,
+            )
+        assert caught.value.effective_from == RECORDED_ON
+        save_tariff(
+            connection,
+            group=CLOSED_GROUP,
+            effective_from=RECORDED_ON,
+            rate=kept,
+        )
+        save_tariff(
+            connection,
+            group=CLOSED_GROUP,
+            effective_from=OCTOBER_ON,
+            rate=LATER_RATE,
+        )
+        january = tariff_for_month(connection, group=CLOSED_GROUP, year=YEAR, month=JANUARY)
+        october = tariff_for_month(connection, group=CLOSED_GROUP, year=YEAR, month=OCTOBER)
+        assert january is not None
+        assert october is not None
+        assert january.rate == kept
+        assert october.rate == LATER_RATE
+        written = lines_of_run(connection, YEAR, JANUARY)
+        assert written[0].tariff is not None
+        assert Decimal(written[0].tariff) == kept
     finally:
         connection.close()
 
@@ -392,6 +533,24 @@ def _two_contracts(connection: sqlite3.Connection) -> None:
             overlimit_150=ZERO,
             kind=ConsumerKind.INDUSTRIAL,
         )
+
+
+def _february_fact(connection: sqlite3.Connection) -> None:
+    found = contract_by_number(connection, CONTRACT)
+    point_id = point_id_by_code(connection, POINT)
+    assert found is not None
+    assert point_id is not None
+    save_monthly_fact(
+        connection,
+        contract_id=found[0],
+        point_id=point_id,
+        year=YEAR,
+        month=FEBRUARY,
+        volume=VOLUME,
+        overlimit_110=OVER_110,
+        overlimit_150=OVER_150,
+        kind=ConsumerKind.INDUSTRIAL,
+    )
 
 
 def _point_region(connection: sqlite3.Connection) -> None:

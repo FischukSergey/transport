@@ -15,11 +15,11 @@ from PySide6.QtWidgets import (
 
 from transport.application.catalog import Catalog
 from transport.application.settings import remember_database, remembered_database
+from transport.ui.calculation import CALCULATION_TITLE, CalculationWindow
 from transport.ui.load import LOAD_TITLE, LoadWindow
 from transport.ui.window import WINDOW_TITLE, DirectoryWindow
 
 DIRECTORY_TITLE = "Справочники"
-CALCULATION_TITLE = "Расчёты"
 STATISTICS_TITLE = "Статистика"
 REPORT_TITLE = "Отчеты"
 SETTINGS_TITLE = "Настройки"
@@ -34,7 +34,6 @@ HOME_LINKS = (
 )
 
 _SECTION_TEXT = {
-    CALCULATION_TITLE: "Закрытие месяца будет на этом экране.",
     STATISTICS_TITLE: "Статистика закрытого прогона будет на этом экране.",
     REPORT_TITLE: "План-факт закрытого прогона будет на этом экране.",
     SETTINGS_TITLE: "Путь к базе, папки и печатные формы будут на этом экране.",
@@ -70,6 +69,9 @@ class HomeWindow(QMainWindow):
     def _open_link(self, title: str) -> None:
         if title == LOAD_TITLE:
             self._show(title, lambda: LoadWindow(self._catalog, on_plan=self._refresh_directories))
+            return
+        if title == CALCULATION_TITLE:
+            self._show(title, lambda: CalculationWindow(self._catalog))
             return
         if title == DIRECTORY_TITLE:
             self._show(title, lambda: DirectoryWindow(self._catalog))

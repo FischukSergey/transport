@@ -1,7 +1,7 @@
 """Снимок месяца из базы и расчёт периода.
 
 Окно формулы не вызывает: сценарий читает таблицы и отдаёт снимок движку.
-Момент перехода берётся из отметки загрузки. Прогон этот модуль не записывает.
+Момент перехода берётся из отметки загрузки. Готовый месяц пишет один прогон.
 """
 
 import sqlite3
@@ -21,13 +21,17 @@ from transport.storage.rates import surcharge_for_month, tariff_for_month
 from transport.storage.repository import (
     PeriodFact,
     PeriodTransition,
+    RunLine,
     group_on,
     period_facts,
     period_transitions,
+    point_id_by_code,
+    replace_month_run,
 )
 
 READY = "ready"
 BLOCKED = "blocked"
+INCOMPLETE = "incomplete"
 ROUTE_MONTH = "month"
 ROUTE_TRANSITION = "transition"
 ROUTE_YEAR_END = "year_end"
@@ -213,14 +217,95 @@ def close_month(
     with_vat: bool = False,
     vat_rate: Decimal | None = None,
 ) -> CloseResult:
-    """Собирает снимок из базы и считает период.
+    """Собирает снимок из базы, считает период и при готовности пишет один прогон.
 
     Отметку перехода читает из загрузки и момент сам не ищет.
-    Население в движок не передаёт. Прогон не записывает.
+    Население в движок не передаёт. Пробел готовности прогон не пишет и уже
+    записанный прогон этого месяца не удаляет. Прогоны других месяцев не меняет.
     """
     snapshot = assemble_snapshot(connection, year=year, month=month)
     lines, reimbursements = _calculate(snapshot, with_vat=with_vat, vat_rate=vat_rate)
+    if snapshot.readiness.status != BLOCKED:
+        _store(connection, snapshot, lines, with_vat=with_vat, vat_rate=vat_rate)
+        connection.commit()
     return CloseResult(snapshot, lines, reimbursements)
+
+
+def _store(
+    connection: sqlite3.Connection,
+    snapshot: MonthSnapshot,
+    lines: tuple[ChargeLine, ...],
+    *,
+    with_vat: bool,
+    vat_rate: Decimal | None,
+) -> None:
+    """Пишет строки с января по месяц закрытия. Сумму пробела не подставляет."""
+    stored: list[RunLine] = []
+    incomplete = False
+    for line in lines:
+        point = _snapshot_point(snapshot, line.point_code)
+        month = _snapshot_month(point, line.month)
+        if month.group is None:
+            return
+        point_id = point_id_by_code(connection, line.point_code)
+        if point_id is None:
+            return
+        charges = line.charges
+        gap = charges is None or charges.gap
+        incomplete = incomplete or gap
+        trace = None if line.transition is None else line.transition.trace
+        tariff = line.transition.tariff if line.transition is not None else month.tariff
+        stored.append(
+            RunLine(
+                point_id,
+                snapshot.year,
+                line.month,
+                month.group.value,
+                _text(month.volume),
+                _text(month.overlimit_110),
+                _text(month.overlimit_150),
+                None if gap else _text(tariff),
+                None if gap or charges is None else _text(charges.base),
+                None if gap or charges is None else _text(charges.overlimit_110),
+                None if gap or charges is None else _text(charges.overlimit_150),
+                None if gap or charges is None else _text(charges.surcharge),
+                None if gap or charges is None else _text(charges.net),
+                None if gap or charges is None else _text(charges.vat),
+                gap,
+                None if trace is None else _text(trace.carry),
+                None if trace is None else _text(trace.tariff_new),
+                None if trace is None else _text(trace.base_volume),
+            )
+        )
+    replace_month_run(
+        connection,
+        year=snapshot.year,
+        month=snapshot.month,
+        status=INCOMPLETE if incomplete else READY,
+        with_vat=with_vat,
+        vat_rate=None if vat_rate is None else _text(vat_rate),
+        lines=tuple(stored),
+    )
+
+
+def _snapshot_point(snapshot: MonthSnapshot, code: str) -> SnapshotPoint:
+    for point in snapshot.points:
+        if point.code == code:
+            return point
+    raise RuntimeError("точка снимка не найдена")
+
+
+def _snapshot_month(point: SnapshotPoint, month: int) -> SnapshotMonth:
+    for item in point.months:
+        if item.month == month:
+            return item
+    raise RuntimeError("месяц снимка не найден")
+
+
+def _text(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value, "f")
 
 
 def assemble_snapshot(connection: sqlite3.Connection, *, year: int, month: int) -> MonthSnapshot:

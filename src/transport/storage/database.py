@@ -32,6 +32,9 @@ def open_database(path: Path | str) -> sqlite3.Connection:
             raise SchemaVersionError(version)
         if version < SCHEMA_VERSION:
             _upgrade(connection, version)
+            # Номер схемы должен пережить закрытие соединения: иначе следующий запуск
+            # снова начинает шаг, а уже созданная черновая таблица его останавливает.
+            connection.commit()
         connection.execute("PRAGMA foreign_keys = ON")
         connection.create_function("contains", 2, _contains, deterministic=True)
     except Exception:
@@ -523,10 +526,19 @@ def _to_version_10(connection: sqlite3.Connection) -> None:
     Адрес и договор не меняет. Точка без такого региона в справочнике остаётся
     на прежней схеме: файл не переписывается.
     """
-    if not _table_exists(connection, "point") or not _has_column(connection, "point", "code"):
+    if not _table_exists(connection, "point"):
+        if _table_exists(connection, "point_v10"):
+            connection.execute("ALTER TABLE point_v10 RENAME TO point")
+            connection.execute("PRAGMA foreign_keys = ON")
+        return
+    if not _has_column(connection, "point", "code"):
         return
     if _has_column(connection, "point", "region_id"):
+        _drop_point_draft(connection)
         return
+    # CREATE TABLE фиксируется сразу. Прерванный шаг оставляет пустую point_v10,
+    # а живая точка ещё без региона. Черновик убирается, данные точки не трогаются.
+    _drop_point_draft(connection)
     pending = connection.execute(
         """
         SELECT COUNT(*) FROM point
@@ -572,6 +584,11 @@ def _to_version_10(connection: sqlite3.Connection) -> None:
     connection.execute("DROP TABLE point")
     connection.execute("ALTER TABLE point_v10 RENAME TO point")
     connection.execute("PRAGMA foreign_keys = ON")
+
+
+def _drop_point_draft(connection: sqlite3.Connection) -> None:
+    if _table_exists(connection, "point_v10"):
+        connection.execute("DROP TABLE point_v10")
 
 
 def _to_version_9(connection: sqlite3.Connection) -> None:

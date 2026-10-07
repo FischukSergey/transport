@@ -17,6 +17,7 @@ from tests.storage.data import (
     POINT_REGION_SCHEMA,
     PREVIOUS_SCHEMA,
     RATE_ON_FIRST,
+    STALE_POINT_TABLE,
 )
 
 from transport.domain.group import Group
@@ -351,6 +352,75 @@ def test_version_9_point_receives_region_from_its_code(tmp_path: Path) -> None:
         assert "region_id" in _columns(connection, "point")
     finally:
         connection.close()
+
+
+def test_stale_point_draft_does_not_block_the_region_step(tmp_path: Path) -> None:
+    path = tmp_path / "point-draft.sqlite"
+    raw = sqlite3.connect(path)
+    raw.executescript(
+        """
+        CREATE TABLE region (
+            id INTEGER PRIMARY KEY,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE consumer (
+            id INTEGER PRIMARY KEY,
+            region_id INTEGER NOT NULL REFERENCES region (id)
+        );
+        CREATE TABLE contract (
+            id INTEGER PRIMARY KEY,
+            consumer_id INTEGER NOT NULL REFERENCES consumer (id)
+        );
+        CREATE TABLE point (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id),
+            code TEXT NOT NULL UNIQUE,
+            address TEXT NOT NULL,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT
+        );
+        """
+    )
+    raw.execute(f"CREATE TABLE {STALE_POINT_TABLE} (id INTEGER PRIMARY KEY)")
+    raw.execute(
+        "INSERT INTO region (id, code, name) VALUES (1, ?, 'Город'), (2, ?, 'Область')",
+        (BUYER_REGION_CODE, POINT_REGION_CODE),
+    )
+    raw.execute("INSERT INTO consumer (id, region_id) VALUES (1, 1)")
+    raw.execute("INSERT INTO contract (id, consumer_id) VALUES (1, 1)")
+    raw.execute(
+        """
+        INSERT INTO point (id, contract_id, code, address, created_on, updated_on)
+        VALUES (1, 1, ?, '', ?, ?)
+        """,
+        (MIGRATED_POINT, RATE_ON_FIRST.isoformat(), RATE_ON_FIRST.isoformat()),
+    )
+    raw.execute(f"PRAGMA user_version = {POINT_REGION_SCHEMA}")
+    raw.commit()
+    raw.close()
+
+    connection = open_database(path)
+    connection.close()
+    raw = sqlite3.connect(path)
+    try:
+        version = raw.execute("PRAGMA user_version").fetchone()
+        names = {row[0] for row in raw.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        row = raw.execute(
+            """
+            SELECT region.code
+            FROM point
+            JOIN region ON region.id = point.region_id
+            """
+        ).fetchone()
+        assert version is not None
+        assert version[0] == SCHEMA_VERSION
+        assert STALE_POINT_TABLE not in names
+        assert row is not None
+        assert row[0] == POINT_REGION_CODE
+    finally:
+        raw.close()
 
 
 def test_version_8_amendment_gains_the_point(tmp_path: Path) -> None:

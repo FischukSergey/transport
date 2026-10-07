@@ -14,6 +14,7 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 from transport.storage.database import open_database
 from transport.storage.repository import (
+    ClosedRateRejected,
     InnTaken,
     NumberTaken,
     RateDateRejected,
@@ -77,6 +78,7 @@ from transport.storage.repository import (
 POPULATION_SURCHARGE = "Для населения спецнадбавка не задаётся."
 GROUP_EIGHT = "Группа 8 не используется."
 RATE_NOT_ON_FIRST = "Ставка записывается только с 1-го числа."
+CLOSED_MONTH_RATE = "Ставка закрытого месяца не меняется."
 RATE_TEXT = "Ставка записывается с двумя знаками. Разделитель — запятая или точка."
 NEED_NAME = "Укажите наименование."
 NEED_NUMBER = "Укажите номер."
@@ -207,6 +209,14 @@ def parse_rate(text: str) -> Decimal:
     return Decimal(body.replace(",", "."))
 
 
+def percent_rate(text: str) -> Decimal:
+    """Процент с двумя знаками становится долей расчёта. 22,00 — это 0,22.
+
+    Иное число знаков после запятой не становится ставкой.
+    """
+    return parse_rate(text) / Decimal(100)
+
+
 class RateTextRejected(Exception):
     """Текст ставки не два знака с запятой или точкой. Строка не создаётся."""
 
@@ -216,13 +226,19 @@ class RateTextRejected(Exception):
 
 
 class Catalog:
-    def __init__(self, connection) -> None:
+    def __init__(self, connection, path: Path) -> None:
         self._connection = connection
+        self._path = path
 
     @classmethod
     def open(cls, path: Path | str) -> "Catalog":
         """Открывает файл базы. Строки не пишет и расчёт не запускает."""
-        return cls(open_database(path))
+        stored = Path(path)
+        return cls(open_database(stored), stored)
+
+    def path(self) -> Path:
+        """Файл базы. Окно расчёта открывает его отдельно, чтобы не занимать это соединение."""
+        return self._path
 
     def close(self) -> None:
         self._connection.close()
@@ -547,6 +563,9 @@ class Catalog:
         except RateDateRejected:
             self._connection.rollback()
             return RATE_NOT_ON_FIRST
+        except ClosedRateRejected:
+            self._connection.rollback()
+            return CLOSED_MONTH_RATE
         self._connection.commit()
         return ""
 
@@ -568,6 +587,9 @@ class Catalog:
         except RateDateRejected:
             self._connection.rollback()
             return RATE_NOT_ON_FIRST
+        except ClosedRateRejected:
+            self._connection.rollback()
+            return CLOSED_MONTH_RATE
         self._connection.commit()
         return ""
 

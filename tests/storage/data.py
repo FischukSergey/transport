@@ -28,6 +28,8 @@ PREVIOUS_SCHEMA = 4
 AMENDMENT_SCHEMA = 8
 # Номер схемы до региона у точки.
 POINT_REGION_SCHEMA = 9
+# Черновик прерванного шага к региону точки.
+STALE_POINT_TABLE = "point_v10"
 POINT_REGION_CODE = "47"
 BUYER_REGION_CODE = "78"
 MIGRATED_POINT = "47-1-1"

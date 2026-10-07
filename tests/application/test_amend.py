@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from tests.application.amend_data import AMEND_ON, AMEND_VOLUME, NEXT_VOLUME
-from tests.application.close_data import CONTRACT, JANUARY_NET, ORDINARY, STORED_RUNS
+from tests.application.close_data import CLOSED_RUNS, CONTRACT, JANUARY_NET, ORDINARY
 from tests.application.test_close import _load
 
 from transport.application.close import close_month
@@ -30,6 +30,6 @@ def test_amendment_row_does_not_change_the_month_cost(tmp_path: Path) -> None:
         assert after.lines[0].charges is not None
         assert before.lines[0].charges.net == JANUARY_NET
         assert after.lines[0].charges.net == JANUARY_NET
-        assert count_runs(connection) == STORED_RUNS
+        assert count_runs(connection) == CLOSED_RUNS
     finally:
         connection.close()
