@@ -781,5 +781,5 @@ _CARD_TITLES = (
     ("Переходный тариф, руб./тыс. м³", "cardTransition"),
     ("Поправка, руб.", "cardCarry"),
     ("Ставка новой группы, руб./тыс. м³", "cardTariffNew"),
-    ("База следа, тыс. м³", "cardBaseVolume"),
+    ("Объём поправки, тыс. м³", "cardBaseVolume"),
 )

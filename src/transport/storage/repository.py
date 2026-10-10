@@ -381,6 +381,28 @@ def save_annual_plan(
     )
 
 
+def release_other_buyer_plans(
+    connection: sqlite3.Connection, *, point_id: int, consumer_id: int
+) -> None:
+    """Снимает точку с планов других покупателей. Факт месяца не удаляет."""
+    connection.execute(
+        """
+        DELETE FROM annual_plan
+        WHERE point_id = ?
+          AND contract_id IN (SELECT id FROM contract WHERE consumer_id != ?)
+        """,
+        (point_id, consumer_id),
+    )
+    connection.execute(
+        """
+        DELETE FROM monthly_plan
+        WHERE point_id = ?
+          AND contract_id IN (SELECT id FROM contract WHERE consumer_id != ?)
+        """,
+        (point_id, consumer_id),
+    )
+
+
 def save_monthly_plan(
     connection: sqlite3.Connection,
     *,

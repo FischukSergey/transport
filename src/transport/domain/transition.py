@@ -67,10 +67,12 @@ def transition_charges(
     """Считает точку, которую загрузка уже отправила в переход на более дешёвую группу.
 
     Момент перехода не ищет и группу не выбирает. Прошлые месяцы только входят
-    в формулу и в результат не пишутся. След строки хранит поправку, ставку
-    новой группы и базу месяца. Пока расчётный тариф не положительный,
-    он не применяется: база месяца 0, поправка переносится дальше. Дальше
-    идёт ставка новой группы. Нет ставки — пробел, сумма не подставляется.
+    в формулу и в результат не пишутся. Поправка берёт весь объём прошлого
+    месяца, сверхлимит из него не вычитается. След хранит поправку, ставку
+    новой группы и объём месяца, на который поправка делится. Пока расчётный
+    тариф не положительный, база месяца 0, а сверхлимит считается по ставке
+    новой группы; поправка переносится дальше. Дальше база и сверхлимит идут
+    по ставке новой группы. Нет ставки — пробел, сумма не подставляется.
     Население даёт отказ population_excluded.
     """
     if consumer is ConsumerKind.POPULATION:
@@ -87,8 +89,7 @@ def transition_charges(
         if settled and month.tariff_new is None:
             lines.append(_gap())
             continue
-        base_volume = _base_volume(month)
-        trace = TransitionTrace(carry, month.tariff_new, base_volume)
+        trace = TransitionTrace(carry, month.tariff_new, month.volume)
         if settled:
             lines.append(
                 _applied(
@@ -103,7 +104,7 @@ def transition_charges(
                 )
             )
             continue
-        if base_volume == 0:
+        if month.volume == 0:
             lines.append(
                 _withheld(
                     month,
@@ -117,7 +118,7 @@ def transition_charges(
                 )
             )
             continue
-        tariff = month.tariff_new + carry / base_volume
+        tariff = month.tariff_new + carry / month.volume
         if tariff > 0:
             settled = True
             carry = Decimal(0)
@@ -134,7 +135,7 @@ def transition_charges(
                 )
             )
         else:
-            carry = base_volume * tariff
+            carry = month.volume * tariff
             lines.append(
                 _withheld(
                     month,
@@ -155,7 +156,7 @@ def _opening_carry(prior: Sequence[TransitionMonth]) -> Decimal | None:
     for month in prior:
         if month.tariff_old is None or month.tariff_new is None:
             return None
-        carry += _base_volume(month) * (month.tariff_new - month.tariff_old)
+        carry += month.volume * (month.tariff_new - month.tariff_old)
     return carry
 
 
@@ -172,7 +173,16 @@ def _applied(
     return TransitionLine(
         tariff,
         True,
-        _charges(month, tariff, consumer, coefficient_110, coefficient_150, with_vat, vat_rate),
+        _charges(
+            month,
+            tariff,
+            month.tariff_new,
+            consumer,
+            coefficient_110,
+            coefficient_150,
+            with_vat,
+            vat_rate,
+        ),
         trace,
         gap=False,
     )
@@ -188,11 +198,20 @@ def _withheld(
     with_vat: bool,
     vat_rate: Decimal | None,
 ) -> TransitionLine:
-    """Тариф ещё не положительный: в плату базы и сверхлимита не идёт."""
+    """Тариф ещё не положительный: база в плату не идёт, сверхлимит — по новой ставке."""
     return TransitionLine(
         tariff,
         False,
-        _charges(month, Decimal(0), consumer, coefficient_110, coefficient_150, with_vat, vat_rate),
+        _charges(
+            month,
+            Decimal(0),
+            month.tariff_new,
+            consumer,
+            coefficient_110,
+            coefficient_150,
+            with_vat,
+            vat_rate,
+        ),
         trace,
         gap=False,
     )
@@ -201,6 +220,7 @@ def _withheld(
 def _charges(
     month: TransitionMonth,
     tariff: Decimal,
+    overlimit_tariff: Decimal | None,
     consumer: ConsumerKind,
     coefficient_110: Decimal,
     coefficient_150: Decimal,
@@ -218,15 +238,12 @@ def _charges(
         coefficient_150=coefficient_150,
         with_vat=with_vat,
         vat_rate=vat_rate,
+        overlimit_tariff=overlimit_tariff,
     )
 
 
 def _gap() -> TransitionLine:
     return TransitionLine(None, False, None, None, gap=True)
-
-
-def _base_volume(month: TransitionMonth) -> Decimal:
-    return month.volume - month.overlimit_110 - month.overlimit_150
 
 
 def _money(amount: Decimal) -> Decimal:

@@ -72,6 +72,18 @@ TRANSITION_NOVEMBER_VOLUME = Decimal("40.000")
 TRANSITION_NOVEMBER_CARRY = Decimal("-128.90")
 TRANSITION_NOVEMBER_TARIFF = Decimal("1217.15")
 TRANSITION_NOVEMBER_BASE = Decimal("48686.00")
+# Февральский переход со сверхлимитом: поправка от всего прошлого объёма,
+# сверхлимит месяца — по ставке новой группы, не по переходному тарифу.
+FILE_PRIOR_VOLUME = Decimal("104.571")
+FILE_PRIOR_OVERLIMIT = Decimal("60.572")
+FILE_MONTH_VOLUME = Decimal("96.571")
+FILE_MONTH_OVERLIMIT = Decimal("52.567")
+FILE_TARIFF_OLD = Decimal("1128.76")
+FILE_TARIFF_NEW = Decimal("1122.69")
+FILE_CARRY = Decimal("-634.74597")
+FILE_TARIFF = Decimal("1116.12")
+FILE_BASE = Decimal("49113.74")
+FILE_OVERLIMIT_COST = Decimal("88524.93")
 
 GROUP_BOUNDARIES: tuple[tuple[Decimal, Group], ...] = (
     (VOLUME_ZERO, Group.G7),
@@ -214,12 +226,12 @@ BALTIC_JUNE = Decimal("1.476")
 BALTIC_JULY = Decimal("1.560")
 BALTIC_YTD_JUNE = Decimal("8.503")
 BALTIC_YTD_JULY = Decimal("10.063")
-# Июль ещё на первой ставке года. База января без сверхлимита 0,002.
-BALTIC_JULY_BASE = Decimal("432.32")
+# Июль ещё на первой ставке года. Поправка берёт весь объём января, включая 0,002.
+BALTIC_JULY_BASE = Decimal("432.01")
 BALTIC_JULY_SURCHARGE = Decimal("400.58")
-BALTIC_JULY_NET = Decimal("832.90")
-# Суммы из счёта. 432,01 получается, если сверхлимит января 0,002 оставить в поправке.
-# 2 161,44 — объём июля на тариф группы 6 первой ставки плюс спецнадбавка города.
+BALTIC_JULY_NET = Decimal("832.59")
+# 432,01 совпадает со счётом. 2 161,44 — объём июля на тариф группы 6 плюс спецнадбавка,
+# без переходного тарифа.
 BALTIC_INVOICE_TRANSPORT = Decimal("432.01")
 BALTIC_INVOICE_WITH_SURCHARGE = Decimal("2161.44")
 

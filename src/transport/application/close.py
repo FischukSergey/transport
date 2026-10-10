@@ -219,7 +219,8 @@ def close_month(
 ) -> CloseResult:
     """Собирает снимок из базы, считает период и при готовности пишет один прогон.
 
-    Отметку перехода читает из загрузки и момент сам не ищет.
+    Отметку перехода читает из загрузки и момент сам не ищет. Отметка
+    не действует, если группа справочника этого месяца уже другая.
     Население в движок не передаёт. Пробел готовности прогон не пишет и уже
     записанный прогон этого месяца не удаляет. Прогоны других месяцев не меняет.
     """
@@ -351,7 +352,9 @@ def _collect(
             opening_only[point.consumer_id] = point.consumer_code
         for opened, volume in point.openings:
             openings.append(OpeningBalance(point.code, opened, volume))
-        point_marks = marks.get(point.point_id, ())
+        point_marks = _marks_for_directory(
+            connection, point.point_id, marks.get(point.point_id, ()), year
+        )
         built = _months(connection, point, point_marks, year)
         if not built:
             continue
@@ -501,7 +504,10 @@ def _transition(
     with_vat: bool,
     vat_rate: Decimal | None,
 ) -> list[ChargeLine]:
-    """Тариф перехода считает по объёму точки. Плату по нему округляет по договорам."""
+    """Тариф перехода считает по объёму точки. Базу и сверхлимит округляет по договорам.
+
+    Сверхлимит идёт по ставке новой группы, база — по переходному тарифу.
+    """
     start = point.months[0].month if point.transition_from is None else point.transition_from
     prior = [month for month in point.months if month.month < start]
     after = [month for month in point.months if month.month >= start]
@@ -521,7 +527,15 @@ def _transition(
         traced = line
         if charges is not None and not line.gap:
             rate = line.tariff if line.applied else Decimal(0)
-            charges = _priced(point, month, rate, with_vat=with_vat, vat_rate=vat_rate)
+            over_rate = None if line.trace is None else line.trace.tariff_new
+            charges = _priced(
+                point,
+                month,
+                rate,
+                with_vat=with_vat,
+                vat_rate=vat_rate,
+                overlimit_tariff=over_rate,
+            )
             traced = TransitionLine(line.tariff, line.applied, charges, line.trace, gap=line.gap)
         lines.append(ChargeLine(point.code, month.month, ROUTE_TRANSITION, charges, traced))
     return lines
@@ -551,6 +565,7 @@ def _priced(
     *,
     with_vat: bool,
     vat_rate: Decimal | None,
+    overlimit_tariff: Decimal | None = None,
 ) -> MonthCharges:
     """Округляет каждый договор и складывает уже округлённые суммы.
 
@@ -569,6 +584,7 @@ def _priced(
             coefficient_150=coefficient_150,
             with_vat=with_vat,
             vat_rate=vat_rate,
+            overlimit_tariff=overlimit_tariff,
         )
         for item in _slices(month)
     ]
@@ -656,6 +672,26 @@ def _marks(rows: list[PeriodTransition]) -> dict[int, tuple[_Mark, ...]]:
             _Mark(row.month, Group(row.recorded_group), Group(row.calculated_group), row.direction)
         )
     return {point_id: tuple(marks) for point_id, marks in grouped.items()}
+
+
+def _marks_for_directory(
+    connection: sqlite3.Connection,
+    point_id: int,
+    marks: tuple[_Mark, ...],
+    year: int,
+) -> tuple[_Mark, ...]:
+    """Оставляет отметку, пока группа справочника этого месяца ей соответствует.
+
+    Ручной выбор другой группы снимает старую отметку с расчёта. Строку загрузки
+    не удаляет.
+    """
+    kept: list[_Mark] = []
+    for mark in marks:
+        directory = group_on(connection, point_id, date(year, mark.month, 1))
+        if directory is not None and directory != mark.recorded.value:
+            continue
+        kept.append(mark)
+    return tuple(kept)
 
 
 def _route(marks: tuple[_Mark, ...]) -> str:

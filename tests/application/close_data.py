@@ -356,7 +356,31 @@ DEARER_YEAR = RouteCase(
     YEAR_END_AMOUNT,
 )
 
-ROUTE_CASES = (UNMARKED, CHEAPER_MONTH, CHEAPER_AFTER_PRIOR, DEARER_YEAR)
+# Справочник уже на группе 4, отметка ещё помнит переход из группы 5.
+# Тот же объём по ставке группы 4 даёт сумму переходного января без поправки.
+MANUAL_NET = TRANSITION_NET
+MANUAL_GROUP = RouteCase(
+    _book(
+        JANUARY,
+        (
+            _party(
+                (_fact(JANUARY, VOLUME),),
+                group=Group.G4,
+                mark=MarkSeed(JANUARY, Group.G5, Group.G4, CHEAPER, VOLUME),
+            ),
+        ),
+    ),
+    ROUTE_MONTH,
+    (JANUARY,),
+    Group.G4,
+    TARIFF_G4_FIRST,
+    MANUAL_NET,
+    None,
+    None,
+    None,
+)
+
+ROUTE_CASES = (UNMARKED, CHEAPER_MONTH, CHEAPER_AFTER_PRIOR, DEARER_YEAR, MANUAL_GROUP)
 
 _JANUARY_TARIFF = TariffSeed(Group.G5, GROUP_ON, TARIFF_G5_FIRST)
 _OCTOBER_TARIFF = TariffSeed(Group.G5, OCTOBER_ON, TARIFF_G5_SECOND)

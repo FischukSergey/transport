@@ -317,7 +317,44 @@ def test_rename_keeps_the_buyer_code(qapp: QApplication, tmp_path: Path) -> None
         catalog.close()
 
 
-def test_transfer_keeps_one_point_and_the_old_volume(qapp: QApplication, tmp_path: Path) -> None:
+def test_known_point_moves_to_the_new_buyer(qapp: QApplication, tmp_path: Path) -> None:
+    catalog = _catalog(tmp_path)
+    try:
+        buyer = _buyer(catalog, FIRST_CODE, BUYER_NAME)
+        contract_id = _contract(catalog, buyer, CONTRACT_NUMBER)
+        point_id = _point(catalog, CONTRACT_NUMBER, POINT_CODE)
+        _volume(catalog, contract_id, point_id)
+        window = LoadWindow(catalog)
+        _kind(window, NEW_BUYER)
+        _text(window, "amendmentName", OTHER_NAME)
+        _data(window, "amendmentRegion", _region_id(catalog))
+        _data(window, "amendmentConsumerKind", AMEND_KIND.value)
+        _text(window, "amendmentContractNumber", NEW_CONTRACT_NUMBER)
+        _text(window, "amendmentPointCode", POINT_CODE)
+        _text(window, "amendmentAddress", NEW_ADDRESS)
+        _text(window, "amendmentVolume", NEXT_VOLUME_TEXT)
+        _date(window)
+        _click(window, "amendmentSave")
+        point = catalog.points()[0]
+        assert len(catalog.points()) == ONE_POINT
+        assert len(catalog.consumers()) == TWO_CARDS
+        assert point.code == POINT_CODE
+        assert point.address == ADDRESS
+        assert point.contract_number == NEW_CONTRACT_NUMBER
+        assert (
+            next(row.code for row in catalog.consumers() if row.name == OTHER_NAME) == SECOND_CODE
+        )
+        assert annual_volumes(catalog.connection(), point_id, AMEND_ON.year) == [STORED_NEXT]
+        assert group_on(catalog.connection(), point_id, GROUP_ON) == HELD_GROUP.value
+        _assert_document(window, NEW_CONTRACT_NUMBER, POINT_CODE, BEFORE_TEXT, NEXT_TEXT)
+        _assert_quiet(catalog)
+    finally:
+        catalog.close()
+
+
+def test_transfer_moves_the_point_off_the_previous_buyer(
+    qapp: QApplication, tmp_path: Path
+) -> None:
     catalog = _catalog(tmp_path)
     try:
         buyer = _buyer(catalog, FIRST_CODE, BUYER_NAME)
@@ -339,18 +376,13 @@ def test_transfer_keeps_one_point_and_the_old_volume(qapp: QApplication, tmp_pat
         assert len(catalog.search_contracts("")) == TWO_CONTRACTS
         assert point.code == POINT_CODE
         assert point.contract_number == TARGET_CONTRACT
-        assert set(annual_volumes(catalog.connection(), point.point_id, AMEND_ON.year)) == set(
-            STORED_VOLUMES
-        )
-        assert group_on(catalog.connection(), point.point_id, GROUP_ON) == SUM_GROUP.value
+        assert annual_volumes(catalog.connection(), point.point_id, AMEND_ON.year) == [STORED_NEXT]
+        assert group_on(catalog.connection(), point.point_id, GROUP_ON) == HELD_GROUP.value
         plan = _table(window, "planTable")
-        assert plan.rowCount() == PLAN_ROWS_TWO
-        contracts = {_shown(plan, row, PLAN_CONTRACT_COLUMN) for row in range(plan.rowCount())}
-        volumes = {_shown(plan, row, PLAN_VOLUME_COLUMN) for row in range(plan.rowCount())}
-        groups = {_shown(plan, row, PLAN_GROUP_COLUMN) for row in range(plan.rowCount())}
-        assert contracts == {CONTRACT_NUMBER, TARGET_CONTRACT}
-        assert volumes == {HELD_TEXT, NEXT_TEXT}
-        assert groups == {SUM_GROUP.value}
+        assert plan.rowCount() == PLAN_ROWS_ONE
+        assert _shown(plan, FIRST_SHOWN_ROW, PLAN_CONTRACT_COLUMN) == TARGET_CONTRACT
+        assert _shown(plan, FIRST_SHOWN_ROW, PLAN_VOLUME_COLUMN) == NEXT_TEXT
+        assert _shown(plan, FIRST_SHOWN_ROW, PLAN_GROUP_COLUMN) == HELD_GROUP.value
         _assert_document(window, TARGET_CONTRACT, POINT_CODE, BEFORE_TEXT, NEXT_TEXT)
         _assert_quiet(catalog)
     finally:

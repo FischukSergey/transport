@@ -30,6 +30,7 @@ from transport.storage.repository import (
     edit_consumer,
     edit_point,
     point_id_by_code,
+    release_other_buyer_plans,
     save_amendment,
     save_annual_plan,
 )
@@ -230,10 +231,11 @@ def _finish_new_point(
     consumer_code: str,
     volume: Decimal,
 ) -> AmendmentSaved:
-    """Новый код создаёт карточку. Известный код оставляет ту же точку.
+    """Новый код создаёт карточку. Известный код того же покупателя её не переносит.
 
-    Карточка остаётся на договоре, где точка появилась. Объём этого договора
-    пишется отдельно и адрес карточки не меняет.
+    Объём другого договора того же покупателя пишется отдельно, адрес карточки
+    не меняется. Известный код другого покупателя переводит карточку на этот
+    договор с новым объёмом и снимает точку с планов прежнего. Факт месяца не трогает.
     """
     point_id = point_id_by_code(connection, document.point_code)
     if point_id is None:
@@ -245,6 +247,8 @@ def _finish_new_point(
             on=document.signed_on,
         )
         point_id = _point_id(connection, document.point_code)
+    else:
+        _claim_existing(connection, document, point_id, contract_id)
     before = _plan_volume(connection, contract_id, point_id, year)
     _write_plan(connection, contract_id, point_id, region_id, year, volume, document.stated)
     group = refresh_plan_group(connection, document.point_code, year)
@@ -312,6 +316,7 @@ def _transfer(
         address=point[2],
         on=document.signed_on,
     )
+    release_other_buyer_plans(connection, point_id=point[0], consumer_id=target[3])
     _write_plan(connection, target[0], point[0], target[1], year, volume, document.stated)
     group = refresh_plan_group(connection, point[1], year)
     _store_row(connection, target[0], document.signed_on, before, volume, point_id=point[0])
@@ -329,6 +334,28 @@ def _volume(
     group = refresh_plan_group(connection, point[1], year)
     _store_row(connection, point[4], document.signed_on, before, volume, point_id=point[0])
     return AmendmentSaved(point[5], point[1], group)
+
+
+def _claim_existing(
+    connection: sqlite3.Connection,
+    document: AmendmentDocument,
+    point_id: int,
+    contract_id: int,
+) -> None:
+    """Тот же покупатель оставляет карточку. Другой забирает точку себе."""
+    point = _point(connection, point_id)
+    buyer_id = _contract(connection, contract_id)[3]
+    if point[3] == buyer_id:
+        return
+    edit_point(
+        connection,
+        point_id=point[0],
+        contract_id=contract_id,
+        code=point[1],
+        address=point[2],
+        on=document.signed_on,
+    )
+    release_other_buyer_plans(connection, point_id=point[0], consumer_id=buyer_id)
 
 
 def _require_point(document: AmendmentDocument) -> None:

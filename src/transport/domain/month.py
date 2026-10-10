@@ -62,6 +62,7 @@ def month_charges(
     coefficient_150: Decimal,
     with_vat: bool = False,
     vat_rate: Decimal | None = None,
+    overlimit_tariff: Decimal | None = None,
 ) -> MonthCharges:
     """Считает строку месяца. Месяц, даты и числовые ставки сам не хранит.
 
@@ -70,6 +71,7 @@ def month_charges(
     Население даёт отказ population_excluded, строка не создаётся.
     НДС — отдельная сумма и только при включённом флаге. Ставка НДС — доля.
     Ставка сверхлимита — тариф × коэффициент, округлённый до копейки, затем объём.
+    Отдельная ставка сверхлимита заменяет тариф только в этой ставке.
     Спецнадбавка считается от всего объёма месяца, включая сверхлимит.
     Нет её ставки — поле пустое, это не пробел.
     """
@@ -77,10 +79,11 @@ def month_charges(
         raise PopulationExcluded
     if tariff is None:
         return MonthCharges(volume, None, None, None, None, net=None, vat=None, gap=True)
+    over_tariff = tariff if overlimit_tariff is None else overlimit_tariff
     base_volume = volume - overlimit_110 - overlimit_150
     base = _money(base_volume * tariff)
-    over_110 = _part(overlimit_110, tariff, coefficient_110)
-    over_150 = _part(overlimit_150, tariff, coefficient_150)
+    over_110 = _part(overlimit_110, over_tariff, coefficient_110)
+    over_150 = _part(overlimit_150, over_tariff, coefficient_150)
     surcharge = _surcharge(volume, surcharge_rate)
     net = base + over_110 + over_150
     if surcharge is not None:
