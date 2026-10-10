@@ -9,11 +9,13 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from transport.application.catalog import POINT_REGION
 from transport.application.sample import CITY_CODE, OBLAST_CODE
 from transport.domain.group import Group, group_of
 from transport.ingest.annual import PlanLine, read_annual_plan
 from transport.parameters import GROUP_ABOVE, GROUP_UPPER_INCLUSIVE
 from transport.storage.repository import (
+    RegionMissing,
     add_consumer,
     add_contract,
     add_point,
@@ -80,6 +82,60 @@ def accept_plan_group(
     connection.commit()
 
 
+class OpenMismatch:
+    def __init__(
+        self,
+        point_code: str,
+        year: int,
+        stated: tuple[Group, ...],
+        calculated: Group,
+        message: str,
+    ) -> None:
+        self.point_code = point_code
+        self.year = year
+        self.stated = stated
+        self.calculated = calculated
+        self.message = message
+
+
+def open_mismatches(connection: sqlite3.Connection) -> tuple[OpenMismatch, ...]:
+    """Открытые расхождения группы плана. По точке и году одна строка."""
+    rows = connection.execute(
+        """
+        SELECT remark.entity, annual_plan.year, remark.message
+        FROM remark
+        JOIN point ON point.code = remark.entity AND point.deleted_on IS NULL
+        JOIN annual_plan ON annual_plan.point_id = point.id
+        WHERE remark.rule_code = ?
+        ORDER BY remark.entity, annual_plan.year, remark.file_row
+        """,
+        (GROUP_MISMATCH,),
+    ).fetchall()
+    found: dict[tuple[str, int], OpenMismatch] = {}
+    for entity, year, message in rows:
+        code = str(entity)
+        plan_year = int(year)
+        key = (code, plan_year)
+        if key in found:
+            continue
+        point_id = point_id_by_code(connection, code)
+        if point_id is None:
+            continue
+        stated = tuple(
+            Group(part)
+            for part in _stated_snapshot(connection, point_id, plan_year).split(",")
+            if part
+        )
+        found[key] = OpenMismatch(
+            code,
+            plan_year,
+            stated,
+            _calculated_group(connection, point_id, plan_year),
+            str(message),
+        )
+    return tuple(found.values())
+
+
 _REGION_NAMES = {
     CITY_CODE: "Санкт-Петербург",
     OBLAST_CODE: "Ленинградская область",
@@ -92,10 +148,12 @@ class PlanLoad:
         year: int,
         lines: int,
         mismatches: tuple[tuple[str, Group, Group], ...],
+        skipped: int,
     ) -> None:
         self.year = year
         self.lines = lines
         self.mismatches = mismatches
+        self.skipped = skipped
 
 
 def load_annual_plan(connection: sqlite3.Connection, path: Path | str) -> PlanLoad:
@@ -124,7 +182,12 @@ def load_annual_plan(connection: sqlite3.Connection, path: Path | str) -> PlanLo
         rows=[(issue.file_row, issue.text) for issue in book.issues] + skipped,
     )
     connection.commit()
-    return PlanLoad(book.year, len(written), tuple(mismatches))
+    return PlanLoad(
+        book.year,
+        len(written),
+        tuple(mismatches),
+        len(skipped) + len(book.issues),
+    )
 
 
 def _regions(connection: sqlite3.Connection) -> dict[str, int]:
@@ -172,13 +235,16 @@ def _write_line(
     contract_id = contract[0]
     point_id = point_id_by_code(connection, line.point)
     if point_id is None:
-        add_point(
-            connection,
-            contract_id=contract_id,
-            code=line.point,
-            address=line.address,
-            on=on,
-        )
+        try:
+            add_point(
+                connection,
+                contract_id=contract_id,
+                code=line.point,
+                address=line.address,
+                on=on,
+            )
+        except RegionMissing:
+            return POINT_REGION
         point_id = point_id_by_code(connection, line.point)
     if point_id is None:
         return "Точка не записана."
@@ -249,6 +315,49 @@ def _groups(
                 mismatches.append((code, line.stated, calculated))
         replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=code, rows=remarks)
     return mismatches
+
+
+def refresh_plan_group(connection: sqlite3.Connection, point_code: str, year: int) -> Group:
+    """Ставит группу точки на 1 января по сумме годовых объёмов. Прогон не создаёт.
+
+    Группа, указанная на вкладке и отличная от расчётной, открывает замечание.
+    Принятое решение сохраняется, пока группы файла и расчёт не изменились.
+    """
+    point_id = point_id_by_code(connection, point_code)
+    if point_id is None:
+        raise ValueError(point_code)
+    calculated = _calculated_group(connection, point_id, year)
+    stated = _stated_snapshot(connection, point_id, year)
+    decision = plan_group_decision(connection, point_id, year)
+    held = decision is not None and decision[0] == stated and decision[1] == calculated.value
+    if decision is not None and held:
+        chosen = Group(decision[2])
+    else:
+        if decision is not None:
+            delete_plan_group_decision(connection, point_id, year)
+        chosen = calculated
+    save_point_group(
+        connection,
+        point_id=point_id,
+        effective_from=date(year, 1, 1),
+        group=chosen,
+    )
+    remarks: list[tuple[int, str]] = []
+    if not held and stated:
+        for part in stated.split(","):
+            if part == calculated.value:
+                continue
+            remarks.append(
+                (
+                    0,
+                    (
+                        f"На вкладке группа {part}, "
+                        f"по сумме объёмов точки группа {calculated.value}."
+                    ),
+                )
+            )
+    replace_remarks(connection, rule_code=GROUP_MISMATCH, entity=point_code, rows=remarks)
+    return chosen
 
 
 def _calculated_group(connection: sqlite3.Connection, point_id: int, year: int) -> Group:

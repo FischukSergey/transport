@@ -1,18 +1,15 @@
-"""Окна справочников и ставок. Расчёт, импорт и отчёты отсюда не вызываются."""
+"""Окно справочников и ставок. Расчёт, загрузка файлов и отчёты отсюда не вызываются."""
 
 import re
 from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QApplication,
     QCalendarWidget,
     QComboBox,
     QDateEdit,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -39,7 +36,6 @@ from transport.application.catalog import (
     RateTextRejected,
     parse_rate,
 )
-from transport.application.settings import remember_database, remembered_database
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 
@@ -81,7 +77,7 @@ class DirectoryWindow(QMainWindow):
         self._editing_consumer_id: int | None = None
         self._editing_contract_id: int | None = None
         self._editing_point_id: int | None = None
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle("Справочники")
         self.resize(960, 640)
         tabs = QTabWidget()
         tabs.setObjectName("directories")
@@ -99,6 +95,17 @@ class DirectoryWindow(QMainWindow):
         self._reload_tariffs()
         self._reload_surcharges()
         self._consumer_code.setText(self._catalog.next_consumer_code())
+
+    def reload_cards(self) -> None:
+        """Перечитывает потребителей, договоры и точки после загрузки плана.
+
+        Ставки не меняет. Код на открытой карточке правки не затирает.
+        """
+        self._reload_consumers()
+        self._reload_contracts()
+        self._reload_points()
+        if self._consumer_mode != "edit":
+            self._consumer_code.setText(self._catalog.next_consumer_code())
 
     def _regions_tab(self) -> QWidget:
         self._region_table = _table(["Код", "Наименование"])
@@ -227,7 +234,9 @@ class DirectoryWindow(QMainWindow):
         return page
 
     def _points_tab(self) -> QWidget:
-        self._point_table = _table(["Потребитель", "Наименование", "Договор", "Номер", "Адрес"])
+        self._point_table = _table(
+            ["Потребитель", "Наименование", "Договор", "Номер", "Регион", "Адрес"]
+        )
         self._point_table.setObjectName("pointTable")
         self._point_table.itemSelectionChanged.connect(self._pick_point)
         self._point_search = _search(self._search_points, "pointSearch", "Номер или адрес точки")
@@ -249,6 +258,10 @@ class DirectoryWindow(QMainWindow):
         self._point_caption.setObjectName("pointContract")
         self._point_code = QLineEdit()
         self._point_code.setObjectName("pointNumber")
+        self._point_code.textChanged.connect(self._show_point_region)
+        self._point_region = QLineEdit()
+        self._point_region.setObjectName("pointRegion")
+        self._point_region.setReadOnly(True)
         self._point_address = QPlainTextEdit()
         self._point_address.setObjectName("pointAddress")
         self._point_address.setTabChangesFocus(True)
@@ -261,6 +274,7 @@ class DirectoryWindow(QMainWindow):
         form = QFormLayout()
         form.addRow("Договор", self._point_caption)
         form.addRow("Номер", self._point_code)
+        form.addRow("Регион", self._point_region)
         form.addRow("Адрес", self._point_address)
         self._point_message = QLabel()
         self._point_message.setObjectName("pointMessage")
@@ -517,6 +531,7 @@ class DirectoryWindow(QMainWindow):
         self._point_message.setText("")
         self._point_caption.setText(NO_CONTRACT)
         self._point_code.clear()
+        self._point_region.clear()
         self._point_address.clear()
         self._point_contract_search.clear()
         self._fill_point_contracts("")
@@ -535,6 +550,7 @@ class DirectoryWindow(QMainWindow):
         self._point_message.setText("")
         self._point_caption.setText(row.contract_number)
         self._point_code.setText(row.code)
+        self._show_point_region()
         self._point_address.setPlainText(row.address)
         self._point_party.hide()
         self._point_card.show()
@@ -577,6 +593,9 @@ class DirectoryWindow(QMainWindow):
         self._point_card.hide()
         self._reload_points()
         self._select_point(code)
+
+    def _show_point_region(self) -> None:
+        self._point_region.setText(self._catalog.point_region_label(self._point_code.text()))
 
     def _search_point_contracts(self, text: str) -> None:
         self._fill_point_contracts(text.strip())
@@ -685,7 +704,14 @@ class DirectoryWindow(QMainWindow):
         _fill(
             self._point_table,
             [
-                (row.consumer_code, row.consumer_name, row.contract_number, row.code, row.address)
+                (
+                    row.consumer_code,
+                    row.consumer_name,
+                    row.contract_number,
+                    row.code,
+                    row.region_code,
+                    row.address,
+                )
                 for row in rows
             ],
         )
@@ -759,33 +785,6 @@ class DirectoryWindow(QMainWindow):
 def create_window(catalog: Catalog) -> DirectoryWindow:
     """Собирает окно справочников. Файл базы не выбирает и расчёт не запускает."""
     return DirectoryWindow(catalog)
-
-
-def main() -> None:
-    """Открывает окно справочников и завершает процесс после его закрытия.
-
-    Путь к базе берётся из настроек рядом с программой. Если его нет,
-    файл выбирается диалогом и запоминается. Расчёт не запускается.
-    """
-    app = QApplication([])
-    directory = Path.cwd()
-    path = remembered_database(directory)
-    if path is None:
-        chosen, _selected = QFileDialog.getSaveFileName(
-            None,
-            "Файл базы",
-            "",
-            "База (*.sqlite)",
-        )
-        if not chosen:
-            return
-        path = Path(chosen)
-        remember_database(directory, path)
-    catalog = Catalog.open(path)
-    catalog.seed_local()
-    window = create_window(catalog)
-    window.show()
-    raise SystemExit(app.exec())
 
 
 def _page(

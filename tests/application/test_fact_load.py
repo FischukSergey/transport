@@ -56,6 +56,8 @@ from tests.ingest.fact_data import (
     NEW_NAME,
     NEW_POINT,
     NEW_VOLUME,
+    OBLAST_CODE,
+    OBLAST_NAME,
     OVER_110,
     OVER_150,
     PARSED_LINES,
@@ -303,6 +305,7 @@ def _group(connection, point: int | str) -> str:
 
 def _directory(connection) -> None:
     region_id = save_region(connection, code=REGION_CODE, name=REGION_NAME)
+    save_region(connection, code=OBLAST_CODE, name=OBLAST_NAME)
     plant = _consumer(connection, region_id, FIRST_CODE, NAME)
     village = _consumer(connection, region_id, SECOND_CODE, PLAN_NAME)
     oblast = _consumer(connection, region_id, THIRD_CODE, LO_NAME)

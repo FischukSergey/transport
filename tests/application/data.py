@@ -14,6 +14,33 @@ from transport.domain.month import ConsumerKind
 
 CONSUMER_KIND_TITLES = ("Промышленный", "Коммунально-бытовой", "Население")
 TAB_TITLES = ("Потребители", "Договоры", "Точки", "Тарифы", "Спецнадбавка", "Регионы")
+LOAD_LINK = "Загрузка данных"
+DIRECTORY_LINK = "Справочники"
+HOME_LINKS = (
+    LOAD_LINK,
+    "Расчёты",
+    "Статистика",
+    "Отчеты",
+    DIRECTORY_LINK,
+    "Настройки",
+)
+LOAD_TITLES = ("План", "Факт", "Допсоглашения")
+SHOWN_MISMATCH_ROWS = 1
+FIRST_SHOWN_ROW = 0
+PLAN_POINT_COLUMN = 2
+STORED_PLAN_ROWS = 0
+MISMATCH_POINT_COLUMN = 0
+MISMATCH_FILE_COLUMN = 1
+MISMATCH_CALC_COLUMN = 2
+UNKNOWN_FACT_GAPS = 3
+FACT_RULE_COLUMN = 2
+FACT_BUYER_COLUMN = 3
+EMPTY_CARDS = 0
+KEPT_RUN = 1
+HELD_RUN_STATUS = "ready"
+HELD_RUN_VAT = 0
+UNKNOWN_CONTRACT = "78-А-9"
+UNKNOWN_POINT = "78-1-9"
 SCREEN_DATE_FORMAT = "dd/MM/yy"
 SAVED = ""
 CONTRACT_NUMBER_TAKEN = CONTRACT_TAKEN
@@ -166,8 +193,8 @@ SEARCH_REGION = RegionSeed("78", "Город")
 SEARCH_KIND = ConsumerKind.INDUSTRIAL
 SEARCH_ON = date(2026, 1, 1)
 SEARCH_PARTIES = (
-    SearchParty("c-n", "Завод Север", "7811111111", "Д-север", "т-север", "Химиков ул., д.10"),
-    SearchParty("c-s", "Южный цех", "7822222222", "Д-юг", "т-юг", "Южная ул., д.2"),
+    SearchParty("c-n", "Завод Север", "7811111111", "Д-север", "78-север", "Химиков ул., д.10"),
+    SearchParty("c-s", "Южный цех", "7822222222", "Д-юг", "78-юг", "Южная ул., д.2"),
 )
 NAME_FRAGMENT = "север"
 INN_FRAGMENT = "781111"
@@ -187,6 +214,7 @@ CONTRACTS_BEFORE = 0
 POINTS_BEFORE = 0
 POINT_NAME_COLUMN = 1
 POINT_CODE_COLUMN = 3
+POINT_REGION_COLUMN = 4
 GENERATED_CODES = ("000001", "000002")
 ADDED_NAMES = ("Первый завод", "Второй завод")
 ADDED_COUNT = 2

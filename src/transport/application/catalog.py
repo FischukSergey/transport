@@ -1,9 +1,10 @@
 """Справочники и ставки для окна.
 
-SQL не содержит. Расчёт, импорт и отчёты не запускает.
+SQL не содержит. Расчёт и отчёты не запускает. Соединение отдаёт экрану загрузки.
 """
 
 import re
+import sqlite3
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -13,16 +14,19 @@ from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
 from transport.storage.database import open_database
 from transport.storage.repository import (
+    ClosedRateRejected,
     InnTaken,
     NumberTaken,
     RateDateRejected,
     RateGroupRejected,
+    RegionMissing,
     list_consumers,
     list_contracts,
     list_points,
     list_regions,
     list_surcharges,
     list_tariffs,
+    point_region_code,
     save_consumer,
     save_contract,
     save_point,
@@ -74,6 +78,7 @@ from transport.storage.repository import (
 POPULATION_SURCHARGE = "Для населения спецнадбавка не задаётся."
 GROUP_EIGHT = "Группа 8 не используется."
 RATE_NOT_ON_FIRST = "Ставка записывается только с 1-го числа."
+CLOSED_MONTH_RATE = "Ставка закрытого месяца не меняется."
 RATE_TEXT = "Ставка записывается с двумя знаками. Разделитель — запятая или точка."
 NEED_NAME = "Укажите наименование."
 NEED_NUMBER = "Укажите номер."
@@ -85,6 +90,7 @@ NEED_CHOICE = "Сначала выберите строку."
 INN_TAKEN = "Потребитель с таким ИНН уже есть."
 CONTRACT_TAKEN = "Договор с таким номером уже есть."
 POINT_TAKEN = "Точка с таким номером уже есть."
+POINT_REGION = "Регион по коду точки не найден."
 
 # Утверждённый тариф и спецнадбавка: знаков после запятой.
 RATE_PLACES = 2
@@ -148,6 +154,8 @@ class PointLine:
         point_id: int,
         code: str,
         address: str,
+        region_code: str,
+        region_name: str,
         contract_number: str,
         consumer_code: str,
         consumer_name: str,
@@ -157,6 +165,8 @@ class PointLine:
         self.point_id = point_id
         self.code = code
         self.address = address
+        self.region_code = region_code
+        self.region_name = region_name
         self.contract_number = contract_number
         self.consumer_code = consumer_code
         self.consumer_name = consumer_name
@@ -199,6 +209,14 @@ def parse_rate(text: str) -> Decimal:
     return Decimal(body.replace(",", "."))
 
 
+def percent_rate(text: str) -> Decimal:
+    """Процент с двумя знаками становится долей расчёта. 22,00 — это 0,22.
+
+    Иное число знаков после запятой не становится ставкой.
+    """
+    return parse_rate(text) / Decimal(100)
+
+
 class RateTextRejected(Exception):
     """Текст ставки не два знака с запятой или точкой. Строка не создаётся."""
 
@@ -208,16 +226,26 @@ class RateTextRejected(Exception):
 
 
 class Catalog:
-    def __init__(self, connection) -> None:
+    def __init__(self, connection, path: Path) -> None:
         self._connection = connection
+        self._path = path
 
     @classmethod
     def open(cls, path: Path | str) -> "Catalog":
         """Открывает файл базы. Строки не пишет и расчёт не запускает."""
-        return cls(open_database(path))
+        stored = Path(path)
+        return cls(open_database(stored), stored)
+
+    def path(self) -> Path:
+        """Файл базы. Окно расчёта открывает его отдельно, чтобы не занимать это соединение."""
+        return self._path
 
     def close(self) -> None:
         self._connection.close()
+
+    def connection(self) -> sqlite3.Connection:
+        """Соединение для загрузки файлов. Само загрузку не запускает."""
+        return self._connection
 
     def seed_local(self) -> None:
         """Добавляет тестовые регионы, тарифы и спецнадбавку, если таких ключей ещё нет.
@@ -430,6 +458,14 @@ class Catalog:
         self._connection.commit()
         return ""
 
+    def point_region_label(self, code: str) -> str:
+        """Подпись региона по первым двум цифрам кода. Неизвестный код даёт пустую строку."""
+        prefix = point_region_code(code)
+        for region in self.regions():
+            if region.code == prefix:
+                return f"{region.code} {region.name}"
+        return ""
+
     def points(self) -> list[PointLine]:
         return [PointLine(*row) for row in list_points(self._connection)]
 
@@ -475,6 +511,9 @@ class Catalog:
         except NumberTaken:
             self._connection.rollback()
             return POINT_TAKEN
+        except RegionMissing:
+            self._connection.rollback()
+            return POINT_REGION
         self._connection.commit()
         return ""
 
@@ -502,6 +541,9 @@ class Catalog:
         except NumberTaken:
             self._connection.rollback()
             return POINT_TAKEN
+        except RegionMissing:
+            self._connection.rollback()
+            return POINT_REGION
         self._connection.commit()
         return ""
 
@@ -521,6 +563,9 @@ class Catalog:
         except RateDateRejected:
             self._connection.rollback()
             return RATE_NOT_ON_FIRST
+        except ClosedRateRejected:
+            self._connection.rollback()
+            return CLOSED_MONTH_RATE
         self._connection.commit()
         return ""
 
@@ -542,6 +587,9 @@ class Catalog:
         except RateDateRejected:
             self._connection.rollback()
             return RATE_NOT_ON_FIRST
+        except ClosedRateRejected:
+            self._connection.rollback()
+            return CLOSED_MONTH_RATE
         self._connection.commit()
         return ""
 

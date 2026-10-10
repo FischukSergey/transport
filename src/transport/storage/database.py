@@ -32,6 +32,9 @@ def open_database(path: Path | str) -> sqlite3.Connection:
             raise SchemaVersionError(version)
         if version < SCHEMA_VERSION:
             _upgrade(connection, version)
+            # Номер схемы должен пережить закрытие соединения: иначе следующий запуск
+            # снова начинает шаг, а уже созданная черновая таблица его останавливает.
+            connection.commit()
         connection.execute("PRAGMA foreign_keys = ON")
         connection.create_function("contains", 2, _contains, deterministic=True)
     except Exception:
@@ -517,6 +520,95 @@ def _to_version_7(connection: sqlite3.Connection) -> None:
     )
 
 
+def _to_version_10(connection: sqlite3.Connection) -> None:
+    """Даёт точке регион по первым двум цифрам кода.
+
+    Адрес и договор не меняет. Точка без такого региона в справочнике остаётся
+    на прежней схеме: файл не переписывается.
+    """
+    if not _table_exists(connection, "point"):
+        if _table_exists(connection, "point_v10"):
+            connection.execute("ALTER TABLE point_v10 RENAME TO point")
+            connection.execute("PRAGMA foreign_keys = ON")
+        return
+    if not _has_column(connection, "point", "code"):
+        return
+    if _has_column(connection, "point", "region_id"):
+        _drop_point_draft(connection)
+        return
+    # CREATE TABLE фиксируется сразу. Прерванный шаг оставляет пустую point_v10,
+    # а живая точка ещё без региона. Черновик убирается, данные точки не трогаются.
+    _drop_point_draft(connection)
+    pending = connection.execute(
+        """
+        SELECT COUNT(*) FROM point
+        WHERE substr(code, 1, 2) NOT IN (SELECT code FROM region)
+        """
+    ).fetchone()
+    if pending is not None and int(pending[0]) != 0:
+        raise sqlite3.IntegrityError("у точки нет региона по первым двум цифрам кода")
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute(
+        """
+        CREATE TABLE point_v10 (
+            id INTEGER PRIMARY KEY,
+            contract_id INTEGER NOT NULL REFERENCES contract (id) ON DELETE RESTRICT,
+            code TEXT NOT NULL,
+            address TEXT NOT NULL,
+            region_id INTEGER NOT NULL REFERENCES region (id) ON DELETE RESTRICT,
+            created_on TEXT NOT NULL,
+            updated_on TEXT NOT NULL,
+            deleted_on TEXT,
+            UNIQUE (code)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO point_v10 (
+            id, contract_id, code, address, region_id, created_on, updated_on, deleted_on
+        )
+        SELECT
+            point.id,
+            point.contract_id,
+            point.code,
+            point.address,
+            region.id,
+            point.created_on,
+            point.updated_on,
+            point.deleted_on
+        FROM point
+        JOIN region ON region.code = substr(point.code, 1, 2)
+        """
+    )
+    connection.execute("DROP TABLE point")
+    connection.execute("ALTER TABLE point_v10 RENAME TO point")
+    connection.execute("PRAGMA foreign_keys = ON")
+
+
+def _drop_point_draft(connection: sqlite3.Connection) -> None:
+    if _table_exists(connection, "point_v10"):
+        connection.execute("DROP TABLE point_v10")
+
+
+def _to_version_9(connection: sqlite3.Connection) -> None:
+    """Строка допсоглашения хранит точку, если документ её касается."""
+    tables = connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'amendment'"
+    ).fetchone()
+    if tables is None:
+        return
+    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(amendment)")}
+    if "point_id" in columns:
+        return
+    connection.execute(
+        """
+        ALTER TABLE amendment
+        ADD COLUMN point_id INTEGER REFERENCES point (id) ON DELETE RESTRICT
+        """
+    )
+
+
 def _to_version_8(connection: sqlite3.Connection) -> None:
     """Добавляет решение человека, какую группу плана оставить у точки."""
     groups = _group_list()
@@ -543,6 +635,8 @@ _STEPS = {
     6: _to_version_6,
     7: _to_version_7,
     8: _to_version_8,
+    9: _to_version_9,
+    10: _to_version_10,
 }
 
 

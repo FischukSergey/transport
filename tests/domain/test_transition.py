@@ -14,6 +14,16 @@ from tests.domain.data import (
     BALTIC_PLAN,
     BALTIC_YTD_JULY,
     BALTIC_YTD_JUNE,
+    FILE_BASE,
+    FILE_CARRY,
+    FILE_MONTH_OVERLIMIT,
+    FILE_MONTH_VOLUME,
+    FILE_OVERLIMIT_COST,
+    FILE_PRIOR_OVERLIMIT,
+    FILE_PRIOR_VOLUME,
+    FILE_TARIFF,
+    FILE_TARIFF_NEW,
+    FILE_TARIFF_OLD,
     JULY,
     NOT_APPLIED_BASE,
     SURCHARGE_CITY_JANUARY_SEPTEMBER,
@@ -156,6 +166,35 @@ def test_november_switch_uses_both_half_year_tariffs() -> None:
     assert line.tariff == TRANSITION_NOVEMBER_TARIFF
     assert line.charges is not None
     assert line.charges.base == TRANSITION_NOVEMBER_BASE
+
+
+def test_overlimit_stays_on_the_new_tariff() -> None:
+    prior = [
+        TransitionMonth(
+            FILE_PRIOR_VOLUME,
+            VOLUME_ZERO,
+            FILE_PRIOR_OVERLIMIT,
+            FILE_TARIFF_OLD,
+            FILE_TARIFF_NEW,
+        )
+    ]
+    month = TransitionMonth(
+        FILE_MONTH_VOLUME,
+        VOLUME_ZERO,
+        FILE_MONTH_OVERLIMIT,
+        FILE_TARIFF_OLD,
+        FILE_TARIFF_NEW,
+    )
+    line = _charges(prior, [month])[0]
+    assert line.applied is True
+    assert line.trace is not None
+    assert line.trace.carry == FILE_CARRY
+    assert line.trace.base_volume == FILE_MONTH_VOLUME
+    assert line.tariff == FILE_TARIFF
+    assert line.charges is not None
+    assert line.charges.base == FILE_BASE
+    assert line.charges.overlimit_110 == NOT_APPLIED_BASE
+    assert line.charges.overlimit_150 == FILE_OVERLIMIT_COST
 
 
 def test_positive_switch_tariff_is_applied_once() -> None:
