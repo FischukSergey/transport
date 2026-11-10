@@ -12,6 +12,11 @@ def test_group_boundary_belongs_to_higher_number(volume: Decimal, group: Group) 
     assert group_of(volume, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE) is group
 
 
-@pytest.mark.parametrize(("fact", "overlimit", "checked"), GROUP_CHECK_VOLUMES)
-def test_overlimit_deduction_is_capped(fact: Decimal, overlimit: Decimal, checked: Decimal) -> None:
-    assert group_check_volume(fact, overlimit, share=OVERLIMIT_DEDUCT) == checked
+@pytest.mark.parametrize(("fact", "overlimit", "cap", "checked"), GROUP_CHECK_VOLUMES)
+def test_overlimit_deduction_is_capped(
+    fact: Decimal,
+    overlimit: Decimal,
+    cap: Decimal,
+    checked: Decimal,
+) -> None:
+    assert group_check_volume(fact, overlimit, share=OVERLIMIT_DEDUCT, cap=cap) == checked

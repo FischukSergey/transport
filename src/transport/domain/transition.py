@@ -72,8 +72,9 @@ def transition_charges(
     новой группы и объём месяца, на который поправка делится. Пока расчётный
     тариф не положительный, база месяца 0, а сверхлимит считается по ставке
     новой группы; поправка переносится дальше. Дальше база и сверхлимит идут
-    по ставке новой группы. Нет ставки — пробел, сумма не подставляется.
-    Население даёт отказ population_excluded.
+    по ставке новой группы. Другая ставка новой группы начинает переход заново:
+    поправка — объём месяцев прежней ставки на разницу двух ставок. Нет ставки —
+    пробел, сумма не подставляется. Население даёт отказ population_excluded.
     """
     if consumer is ConsumerKind.POPULATION:
         raise PopulationExcluded
@@ -81,6 +82,8 @@ def transition_charges(
     if carry is None:
         return [_gap() for _ in months]
     settled = False
+    step_tariff: Decimal | None = None
+    step_volume = Decimal(0)
     lines: list[TransitionLine] = []
     for month in months:
         if not settled and month.tariff_new is None:
@@ -89,8 +92,15 @@ def transition_charges(
         if settled and month.tariff_new is None:
             lines.append(_gap())
             continue
+        if step_tariff is not None and month.tariff_new != step_tariff:
+            if settled:
+                carry = step_volume * (month.tariff_new - step_tariff)
+                settled = False
+            step_volume = Decimal(0)
+        step_tariff = month.tariff_new
         trace = TransitionTrace(carry, month.tariff_new, month.volume)
         if settled:
+            step_volume += month.volume
             lines.append(
                 _applied(
                     month,
@@ -119,6 +129,7 @@ def transition_charges(
             )
             continue
         tariff = month.tariff_new + carry / month.volume
+        step_volume += month.volume
         if tariff > 0:
             settled = True
             carry = Decimal(0)

@@ -31,13 +31,20 @@ def group_of(
     return above
 
 
-def group_check_volume(fact: Decimal, overlimit: Decimal, *, share: Decimal) -> Decimal:
+def group_check_volume(
+    fact: Decimal,
+    overlimit: Decimal,
+    *,
+    share: Decimal,
+    cap: Decimal,
+) -> Decimal:
     """Объём сверки группы по факту с начала года. Группу не назначает.
 
-    Вычет — меньшее из сверхлимита и доли факта. Отрицательный сверхлимит
-    в вычет не идёт.
+    Вычет — меньшее из сверхлимита и доли cap. Отрицательный сверхлимит
+    в вычет не идёт. cap выбирает загрузка: годовой план, пока факт года
+    неизвестен, и сам факт, когда год уже собран.
     """
-    deduct = min(overlimit, share * fact)
+    deduct = min(overlimit, share * cap)
     if deduct < 0:
         deduct = Decimal(0)
     return fact - deduct

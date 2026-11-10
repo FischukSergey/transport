@@ -26,11 +26,18 @@ from tests.domain.data import (
     FILE_TARIFF_OLD,
     JULY,
     NOT_APPLIED_BASE,
+    SECOND_STEP_BASE,
+    SECOND_STEP_CARRY,
+    SECOND_STEP_PLAIN_BASE,
+    SECOND_STEP_TARIFF,
+    SECOND_STEP_VOLUME,
     SURCHARGE_CITY_JANUARY_SEPTEMBER,
     TARIFF_G4_FIRST,
     TARIFF_G4_SECOND,
     TARIFF_G5_FIRST,
     TARIFF_G5_SECOND,
+    TARIFF_G6_FIRST,
+    TARIFF_G7_FIRST,
     TRANSITION_HALF_VOLUME,
     TRANSITION_NEGATIVE_SURCHARGE,
     TRANSITION_NEGATIVE_VOLUME,
@@ -195,6 +202,27 @@ def test_overlimit_stays_on_the_new_tariff() -> None:
     assert line.charges.base == FILE_BASE
     assert line.charges.overlimit_110 == NOT_APPLIED_BASE
     assert line.charges.overlimit_150 == FILE_OVERLIMIT_COST
+
+
+def test_second_cheaper_group_starts_a_new_transition() -> None:
+    months = [
+        _month(SECOND_STEP_VOLUME, TARIFF_G7_FIRST, TARIFF_G6_FIRST),
+        _month(SECOND_STEP_VOLUME, TARIFF_G7_FIRST, TARIFF_G5_FIRST),
+        _month(SECOND_STEP_VOLUME, TARIFF_G7_FIRST, TARIFF_G5_FIRST),
+    ]
+    first, second, plain = _charges([], months)
+    assert first.applied is True
+    assert first.tariff == TARIFF_G6_FIRST
+    assert second.applied is True
+    assert second.trace is not None
+    assert second.trace.carry == SECOND_STEP_CARRY
+    assert second.tariff == SECOND_STEP_TARIFF
+    assert second.charges is not None
+    assert second.charges.base == SECOND_STEP_BASE
+    assert plain.applied is True
+    assert plain.tariff == TARIFF_G5_FIRST
+    assert plain.charges is not None
+    assert plain.charges.base == SECOND_STEP_PLAIN_BASE
 
 
 def test_positive_switch_tariff_is_applied_once() -> None:
