@@ -17,6 +17,7 @@ from transport.domain.month import ConsumerKind
 from transport.ingest.fact import FactLine, read_month_fact
 from transport.parameters import GROUP_ABOVE, GROUP_UPPER_INCLUSIVE, OVERLIMIT_DEDUCT
 from transport.storage.repository import (
+    annual_volumes,
     clear_fact_discrepancies,
     consumer_card,
     consumer_names,
@@ -235,7 +236,12 @@ def _transitions(connection: sqlite3.Connection, year: int, month: int) -> list[
         if recorded_code is None:
             continue
         fact, overlimit = _year_to_date(connection, point_id, year, month)
-        checked = group_check_volume(fact, overlimit, share=OVERLIMIT_DEDUCT)
+        checked = group_check_volume(
+            fact,
+            overlimit,
+            share=OVERLIMIT_DEDUCT,
+            cap=_deduct_cap(connection, point_id, year, month, fact),
+        )
         calculated = group_of(checked, GROUP_UPPER_INCLUSIVE, above=GROUP_ABOVE)
         recorded = Group(recorded_code)
         direction = _direction(recorded, calculated)
@@ -246,6 +252,22 @@ def _transitions(connection: sqlite3.Connection, year: int, month: int) -> list[
         )
     insert_group_transitions(connection, rows)
     return rows
+
+
+def _deduct_cap(
+    connection: sqlite3.Connection,
+    point_id: int,
+    year: int,
+    month: int,
+    fact: Decimal,
+) -> Decimal:
+    """База вычета 10 %. В декабре это факт года, до него — годовой план."""
+    if month == _YEAR_END_MONTH:
+        return fact
+    return sum(
+        (Decimal(volume) for volume in annual_volumes(connection, point_id, year)),
+        Decimal(0),
+    )
 
 
 def _year_to_date(

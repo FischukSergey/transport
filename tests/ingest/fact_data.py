@@ -103,6 +103,8 @@ CROSS_VOLUME = BOUND_G7 + VOLUME_STEP
 CROSS_FROM = Group.G7
 CROSS_TO = Group.G6
 HOLD_PRIOR = BOUND_G7
+# Годовой план той же точки. В течение года 10 % считаются от него, не от факта.
+HOLD_PLAN = BOUND_G7
 HOLD_OVER = VOLUME_STEP
 DEAR_VOLUME = BOUND_G7
 DEAR_FROM = Group.G6

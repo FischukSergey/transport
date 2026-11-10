@@ -61,6 +61,13 @@ TRANSITION_RECOVER_VOLUME = Decimal("10.000")
 TRANSITION_TARIFF_RECOVERED = Decimal("1093.44")
 TRANSITION_RECOVERED_BASE = Decimal("10934.40")
 TRANSITION_PLAIN_BASE = Decimal("11165.30")
+# Второй переход 7 → 6, затем 6 → 5. Первый месяц сразу на ставке группы 6.
+# Поправка второго — объём первого месяца на разницу ставок 5 и 6.
+SECOND_STEP_VOLUME = Decimal("10.000")
+SECOND_STEP_CARRY = Decimal("-60.70")
+SECOND_STEP_TARIFF = Decimal("1116.62")
+SECOND_STEP_BASE = Decimal("11166.20")
+SECOND_STEP_PLAIN_BASE = Decimal("11226.90")
 # Короткий прошлый объём 10 при месяце 40: тариф месяца смены сразу положительный.
 TRANSITION_POSITIVE_PRIOR = Decimal("10.000")
 TRANSITION_POSITIVE_VOLUME = Decimal("40.000")
@@ -104,12 +111,18 @@ GROUP_BOUNDARIES: tuple[tuple[Decimal, Group], ...] = (
     (BOUND_G1 + VOLUME_STEP, GROUP_ABOVE),
 )
 
-# Факт, сверхлимит и объём сверки после вычета не больше 10 %.
+# Факт, сверхлимит, база вычета и объём сверки. База — план или уже собранный факт года.
 _DEDUCTED = BOUND_G6 - BOUND_G6 * OVERLIMIT_DEDUCT
-GROUP_CHECK_VOLUMES: tuple[tuple[Decimal, Decimal, Decimal], ...] = (
-    (BOUND_G7 + VOLUME_STEP, VOLUME_STEP, BOUND_G7),
-    (BOUND_G7 + VOLUME_STEP, VOLUME_ZERO, BOUND_G7 + VOLUME_STEP),
-    (BOUND_G6, BOUND_G6, _DEDUCTED),
+# План меньше факта: 10 % плана, не факта. Факт 20, план 10, сверхлимит 10 → вычет 1.
+CHECK_PLAN = BOUND_G7
+CHECK_FACT = BOUND_G7 + BOUND_G7
+CHECK_OVERLIMIT = BOUND_G7
+CHECK_WITH_PLAN = CHECK_FACT - CHECK_PLAN * OVERLIMIT_DEDUCT
+GROUP_CHECK_VOLUMES: tuple[tuple[Decimal, Decimal, Decimal, Decimal], ...] = (
+    (BOUND_G7 + VOLUME_STEP, VOLUME_STEP, BOUND_G7 + VOLUME_STEP, BOUND_G7),
+    (BOUND_G7 + VOLUME_STEP, VOLUME_ZERO, BOUND_G7 + VOLUME_STEP, BOUND_G7 + VOLUME_STEP),
+    (BOUND_G6, BOUND_G6, BOUND_G6, _DEDUCTED),
+    (CHECK_FACT, CHECK_OVERLIMIT, CHECK_PLAN, CHECK_WITH_PLAN),
 )
 
 

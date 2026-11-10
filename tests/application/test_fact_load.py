@@ -38,6 +38,7 @@ from tests.ingest.fact_data import (
     HELD_LINES,
     HOLD_CONTRACT,
     HOLD_OVER,
+    HOLD_PLAN,
     HOLD_POINT,
     HOLD_PRIOR,
     JANUARY,
@@ -89,6 +90,7 @@ from transport.domain.month import ConsumerKind
 from transport.ingest.fact import read_month_fact
 from transport.storage.database import open_database
 from transport.storage.repository import (
+    save_annual_plan,
     save_consumer,
     save_contract,
     save_monthly_fact,
@@ -202,6 +204,15 @@ def _transition_directory(connection) -> tuple[int, int, int]:
     _group_row(connection, cross_id, CROSS_FROM)
     _group_row(connection, hold_id, CROSS_FROM)
     _group_row(connection, dear_id, DEAR_FROM)
+    save_annual_plan(
+        connection,
+        contract_id=hold,
+        point_id=hold_id,
+        region_id=region_id,
+        year=YEAR,
+        volume=HOLD_PLAN,
+        stated_group=CROSS_FROM,
+    )
     _prior_fact(connection, first, cross_id, JANUARY, CROSS_PRIOR, ZERO_VOLUME, ZERO_VOLUME)
     _prior_fact(connection, second, cross_id, JANUARY, CROSS_PRIOR, ZERO_VOLUME, ZERO_VOLUME)
     _prior_fact(connection, hold, hold_id, JANUARY, HOLD_PRIOR, ZERO_VOLUME, ZERO_VOLUME)

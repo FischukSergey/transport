@@ -4,8 +4,11 @@ version: "3"
 silent: true
 
 vars:
-  PYTHON: python3
-  PIP: pip3
+  # Оболочка без активации всё равно берёт интерпретатор проекта.
+  PYTHON:
+    sh: '[ -x .venv/bin/python3 ] && echo .venv/bin/python3 || echo python3'
+  PIP:
+    sh: '[ -x .venv/bin/pip3 ] && echo .venv/bin/pip3 || echo pip3'
 
 tasks:
   default:
