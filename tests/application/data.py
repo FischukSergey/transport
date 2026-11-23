@@ -11,6 +11,7 @@ from transport.application.catalog import (
 )
 from transport.domain.group import Group
 from transport.domain.month import ConsumerKind
+from transport.storage.repository import SEARCH_LIMIT
 
 CONSUMER_KIND_TITLES = ("Промышленный", "Коммунально-бытовой", "Население")
 TAB_TITLES = ("Потребители", "Договоры", "Точки", "Тарифы", "Спецнадбавка", "Регионы")
@@ -225,6 +226,10 @@ EDITED_ADDRESS = "Новый адрес, д.1"
 FIND_EXTRA = 1
 BULK_PREFIX = "p-"
 NEEDLE = SearchParty("needle", "Искомый", "7800000000", "", "", "")
+DIRECTORY_NAME = "Справочник"
+DIRECTORY_ADDRESS = "Адрес справочника"
+DIRECTORY_CONTRACT_MARK = "Д-"
+DIRECTORY_ROWS = SEARCH_LIMIT + FIND_EXTRA
 
 
 TARIFF_SCALE_REFUSAL = ScreenRate(

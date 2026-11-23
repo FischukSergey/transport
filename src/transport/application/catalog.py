@@ -66,6 +66,15 @@ from transport.storage.repository import (
     find_points as _find_points,
 )
 from transport.storage.repository import (
+    match_consumers as _match_consumers,
+)
+from transport.storage.repository import (
+    match_contracts as _match_contracts,
+)
+from transport.storage.repository import (
+    match_points as _match_points,
+)
+from transport.storage.repository import (
     next_consumer_code as _next_consumer_code,
 )
 from transport.storage.repository import (
@@ -294,6 +303,10 @@ class Catalog:
     def find_consumers(self, fragment: str) -> list[ConsumerLine]:
         return [ConsumerLine(*row) for row in _find_consumers(self._connection, fragment)]
 
+    def match_consumers(self, fragment: str) -> list[ConsumerLine]:
+        """Все потребители вкладки. Подсказка карточки по-прежнему короче."""
+        return [ConsumerLine(*row) for row in _match_consumers(self._connection, fragment)]
+
     def save_consumer(
         self,
         *,
@@ -385,6 +398,10 @@ class Catalog:
     def search_contracts(self, fragment: str) -> list[ContractLine]:
         return [ContractLine(*row) for row in _search_contracts(self._connection, fragment)]
 
+    def match_contracts(self, fragment: str) -> list[ContractLine]:
+        """Все договоры вкладки. Подсказка карточки по-прежнему короче."""
+        return [ContractLine(*row) for row in _match_contracts(self._connection, fragment)]
+
     def search_contract_choices(self, fragment: str) -> list[ContractLine]:
         return [ContractLine(*row) for row in _search_contract_choices(self._connection, fragment)]
 
@@ -471,6 +488,10 @@ class Catalog:
 
     def find_points(self, fragment: str) -> list[PointLine]:
         return [PointLine(*row) for row in _find_points(self._connection, fragment)]
+
+    def match_points(self, fragment: str) -> list[PointLine]:
+        """Все точки вкладки. Подсказка карточки по-прежнему короче."""
+        return [PointLine(*row) for row in _match_points(self._connection, fragment)]
 
     def save_point(
         self,

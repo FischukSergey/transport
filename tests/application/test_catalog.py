@@ -9,6 +9,10 @@ from tests.application.data import (
     CONTRACT_FRAGMENT,
     CONTRACT_NUMBER_TAKEN,
     DIRECTORY,
+    DIRECTORY_ADDRESS,
+    DIRECTORY_CONTRACT_MARK,
+    DIRECTORY_NAME,
+    DIRECTORY_ROWS,
     EDITED_ADDRESS,
     EDITED_COUNT,
     EDITED_NAME,
@@ -284,6 +288,22 @@ def test_empty_fragment_returns_only_the_page(tmp_path: Path) -> None:
         catalog.close()
 
 
+def test_directory_tables_list_every_row(tmp_path: Path) -> None:
+    catalog = _open_region(tmp_path / "directory-rows.sqlite")
+    try:
+        region_id = _region_id(catalog, SEARCH_REGION.code)
+        _save_directory(catalog, region_id)
+        assert len(catalog.match_consumers("")) == DIRECTORY_ROWS
+        assert len(catalog.match_contracts("")) == DIRECTORY_ROWS
+        assert len(catalog.match_points("")) == DIRECTORY_ROWS
+        assert len(catalog.match_consumers(DIRECTORY_NAME)) == DIRECTORY_ROWS
+        assert len(catalog.find_consumers("")) == SEARCH_LIMIT
+        assert len(catalog.search_contracts("")) == SEARCH_LIMIT
+        assert len(catalog.find_points("")) == SEARCH_LIMIT
+    finally:
+        catalog.close()
+
+
 def test_added_consumer_keeps_the_previous(tmp_path: Path) -> None:
     catalog = _open_region(tmp_path / "add-consumer.sqlite")
     try:
@@ -480,6 +500,34 @@ def _open_search(path: Path) -> Catalog:
     for party in SEARCH_PARTIES:
         _save_party(catalog, region_id, party)
     return catalog
+
+
+def _save_directory(catalog: Catalog, region_id: int) -> None:
+    for index in range(DIRECTORY_ROWS):
+        code = f"{BULK_PREFIX}{index}"
+        catalog.save_consumer(
+            code=code,
+            name=DIRECTORY_NAME,
+            region_id=region_id,
+            kind=SEARCH_KIND,
+            inn="",
+            on=SEARCH_ON,
+        )
+        consumer_id = next(row.consumer_id for row in catalog.consumers() if row.code == code)
+        number = f"{DIRECTORY_CONTRACT_MARK}{index}"
+        catalog.save_contract(
+            consumer_id=consumer_id,
+            number=number,
+            signed_on=SEARCH_ON,
+            on=SEARCH_ON,
+        )
+        contract_id = next(row.contract_id for row in catalog.contracts() if row.number == number)
+        catalog.save_point(
+            contract_id=contract_id,
+            code=f"{SEARCH_REGION.code}-{index}",
+            address=DIRECTORY_ADDRESS,
+            on=SEARCH_ON,
+        )
 
 
 def _save_party(catalog: Catalog, region_id: int, party: SearchParty) -> None:

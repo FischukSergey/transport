@@ -24,6 +24,10 @@ from tests.application.data import (
     CONTRACT_NUMBER_COLUMN,
     CONTRACTS_BEFORE,
     DIRECTORY,
+    DIRECTORY_ADDRESS,
+    DIRECTORY_CONTRACT_MARK,
+    DIRECTORY_NAME,
+    DIRECTORY_ROWS,
     EDITED_COUNT,
     EDITED_NAME,
     EMPTY_NAME,
@@ -51,6 +55,7 @@ from tests.application.data import (
     RefusalCase,
     ScreenRate,
 )
+from tests.application.test_catalog import _open_region, _region_id, _save_directory
 
 from transport.application.catalog import Catalog
 from transport.ui.window import create_window
@@ -431,6 +436,36 @@ def _assert_tariff_screen(path: Path, case: ScreenRate) -> None:
         assert _cell(window, "tariffTable", case.rate_column) == case.shown_rate
     finally:
         catalog.close()
+
+
+def test_directory_tables_show_every_row(qapp: QApplication, tmp_path: Path) -> None:
+    catalog = _open_region(tmp_path / "directory-rows.sqlite")
+    try:
+        _save_directory(catalog, _region_id(catalog, SEARCH_REGION.code))
+        window = create_window(catalog)
+        assert _rows(window, "consumerTable") == DIRECTORY_ROWS
+        assert _rows(window, "contractTable") == DIRECTORY_ROWS
+        assert _rows(window, "pointTable") == DIRECTORY_ROWS
+        _type(window, "consumerSearch", DIRECTORY_NAME)
+        _type(window, "contractSearch", DIRECTORY_CONTRACT_MARK)
+        _type(window, "pointSearch", DIRECTORY_ADDRESS)
+        assert _rows(window, "consumerTable") == DIRECTORY_ROWS
+        assert _rows(window, "contractTable") == DIRECTORY_ROWS
+        assert _rows(window, "pointTable") == DIRECTORY_ROWS
+    finally:
+        catalog.close()
+
+
+def _rows(window, name: str) -> int:
+    table = window.findChild(QTableWidget, name)
+    assert table is not None
+    return table.rowCount()
+
+
+def _type(window, name: str, text: str) -> None:
+    widget = window.findChild(QLineEdit, name)
+    assert widget is not None
+    widget.setText(text)
 
 
 def _set_rate(window, name: str, text: str) -> None:

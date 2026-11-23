@@ -1,0 +1,70 @@
+from datetime import date
+from decimal import Decimal
+
+from transport.domain.group import Group
+
+YEAR = 2026
+JANUARY = 1
+FEBRUARY = 2
+MARCH = 3
+MONTHS = 12
+RECORDED_ON = date(YEAR, JANUARY, 1)
+REGION_CODE = "78"
+REGION_NAME = "Город"
+BUYER = "000001"
+BUYER_NAME = "Покупатель"
+ADDRESS = "Невский, 1"
+POINT = "78-1-7"
+CARD_CONTRACT = "Д-1"
+OTHER_CONTRACT = "Д-2"
+GROUP = Group.G5
+# 10.004 × 1.00 = 10.004, до копейки 10.00. Два договора дают 20.00.
+# Один раз от суммы 20.008 × 1.00 получилось бы 20.01.
+CONTRACT_VOLUME = Decimal("10.004")
+POINT_VOLUME = Decimal("20.008")
+TARIFF = Decimal("1.00")
+SURCHARGE_RATE = Decimal("0.10")
+CONTRACT_TRANSPORT = Decimal("10.00")
+CONTRACT_SURCHARGE = Decimal("1.00")
+PLAN_TRANSPORT = Decimal("20.00")
+PLAN_SURCHARGE = Decimal("2.00")
+PLAN_TOTAL_TEXT = "Точка"
+SHEET_TITLE = "Точка"
+FEBRUARY_TITLE = "Февраль"
+FACT_SECTION = "Факт"
+FACT_TRANSPORT = Decimal("20.00")
+FACT_SURCHARGE = Decimal("2.00")
+FACT_VOLUME = Decimal("20.008")
+ZERO = Decimal(0)
+OVERLIMIT = ZERO
+TRANSITION_MONTH = FEBRUARY
+RECORDED_GROUP = Group.G5
+CALCULATED_GROUP = Group.G4
+DIRECTION = "cheaper"
+CHEAPER_TEXT = "дешевле"
+UNCLOSED_TEXT = "не закрыт"
+NO_TRANSITION_TEXT = "переходов нет"
+POPULATION_TEXT = "Население в отчёт не входит."
+PLAN_TRANSPORT_COLUMN = 2
+PLAN_VOLUME_COLUMN = 1
+PLAN_TOTAL_ROW = 2
+FACT_VOLUME_COLUMN = 1
+FACT_TRANSPORT_COLUMN = 2
+TRANSITION_DIRECTION_COLUMN = 3
+TRANSITION_ROW = 0
+CONTRACTS = 2
+OTHER_VOLUME = Decimal(8)
+OTHER_TARIFF = Decimal("2.50")
+OTHER_SURCHARGE_RATE = Decimal("1.00")
+OTHER_TRANSPORT = Decimal("20.00")
+OTHER_SURCHARGE = Decimal("8.00")
+LATER_VOLUME = Decimal(10)
+LATER_TARIFF = Decimal(100)
+LATER_SURCHARGE = Decimal(5)
+LATER_TRANSPORT = Decimal("1000.00")
+LATER_SURCHARGE_COST = Decimal("50.00")
+POPULATION_BUYER = "000002"
+POPULATION_POINT = "78-1-8"
+POPULATION_CONTRACT = "Д-3"
+STORED_RUN = 1
+LATER_JANUARY_LINES = 1

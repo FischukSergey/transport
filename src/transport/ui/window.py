@@ -662,7 +662,7 @@ class DirectoryWindow(QMainWindow):
         self._reload_points()
 
     def _reload_consumers(self) -> None:
-        rows = self._catalog.find_consumers(self._consumer_query)
+        rows = self._catalog.match_consumers(self._consumer_query)
         self._consumer_rows = rows
         _fill(
             self._consumer_table,
@@ -681,7 +681,7 @@ class DirectoryWindow(QMainWindow):
         )
 
     def _reload_contracts(self) -> None:
-        rows = self._catalog.search_contracts(self._contract_query)
+        rows = self._catalog.match_contracts(self._contract_query)
         self._contract_rows = rows
         _fill(
             self._contract_table,
@@ -699,7 +699,7 @@ class DirectoryWindow(QMainWindow):
         )
 
     def _reload_points(self) -> None:
-        rows = self._catalog.find_points(self._point_query)
+        rows = self._catalog.match_points(self._point_query)
         self._point_rows = rows
         _fill(
             self._point_table,

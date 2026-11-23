@@ -17,6 +17,7 @@ from transport.application.catalog import Catalog
 from transport.application.settings import remember_database, remembered_database
 from transport.ui.calculation import CALCULATION_TITLE, CalculationWindow
 from transport.ui.load import LOAD_TITLE, LoadWindow
+from transport.ui.reports import ReportsWindow
 from transport.ui.window import WINDOW_TITLE, DirectoryWindow
 
 DIRECTORY_TITLE = "Справочники"
@@ -35,7 +36,6 @@ HOME_LINKS = (
 
 _SECTION_TEXT = {
     STATISTICS_TITLE: "Статистика закрытого прогона будет на этом экране.",
-    REPORT_TITLE: "План-факт закрытого прогона будет на этом экране.",
     SETTINGS_TITLE: "Путь к базе, папки и печатные формы будут на этом экране.",
 }
 
@@ -75,6 +75,9 @@ class HomeWindow(QMainWindow):
             return
         if title == DIRECTORY_TITLE:
             self._show(title, lambda: DirectoryWindow(self._catalog))
+            return
+        if title == REPORT_TITLE:
+            self._show(title, lambda: ReportsWindow(self._catalog))
             return
         text = _SECTION_TEXT[title]
         self._show(title, lambda: _section(title, text))

@@ -16,7 +16,7 @@ from transport.storage.rates import tariff_for_month
 
 _GROUP_ORDER = {group.value: index for index, group in enumerate(Group)}
 
-# Порция строк на экране. Весь справочник в окно не загружается.
+# Подсказка на карточке. Таблица вкладки справочника этим пределом не режется.
 SEARCH_LIMIT = 50
 
 _ContractRow = tuple[int, int, str, str, str, str, str, str]
@@ -763,6 +763,116 @@ def point_consumer_kind(connection: sqlite3.Connection, point_id: int) -> str | 
     return str(row[0])
 
 
+def point_card(
+    connection: sqlite3.Connection, point_id: int
+) -> tuple[str, str, int, str, str, str, str, str, str] | None:
+    """Код, адрес, регион, покупатель и договор карточки. Удалённой точки нет."""
+    row = connection.execute(
+        """
+        SELECT
+            point.code,
+            point.address,
+            point.region_id,
+            region.code,
+            region.name,
+            consumer.code,
+            consumer.name,
+            consumer.kind,
+            contract.number
+        FROM point
+        JOIN region ON region.id = point.region_id
+        JOIN contract ON contract.id = point.contract_id
+        JOIN consumer ON consumer.id = contract.consumer_id
+        WHERE point.id = ? AND point.deleted_on IS NULL
+        """,
+        (point_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return (
+        str(row[0]),
+        str(row[1]),
+        int(row[2]),
+        str(row[3]),
+        str(row[4]),
+        str(row[5]),
+        str(row[6]),
+        str(row[7]),
+        str(row[8]),
+    )
+
+
+def annual_contract_volumes(
+    connection: sqlite3.Connection, point_id: int, year: int
+) -> list[tuple[str, str]]:
+    """Номер договора и годовой объём точки. Помесячный план не читает."""
+    rows = connection.execute(
+        """
+        SELECT contract.number, annual_plan.volume
+        FROM annual_plan
+        JOIN contract ON contract.id = annual_plan.contract_id
+        WHERE annual_plan.point_id = ?
+          AND annual_plan.year = ?
+          AND contract.deleted_on IS NULL
+        ORDER BY contract.number
+        """,
+        (point_id, year),
+    ).fetchall()
+    return [(str(row[0]), str(row[1])) for row in rows]
+
+
+def point_transitions(
+    connection: sqlite3.Connection, point_id: int, year: int
+) -> list[tuple[int, str, str, str]]:
+    """Отметки перехода точки за год. Группу заново не назначает."""
+    rows = connection.execute(
+        """
+        SELECT month, recorded_group, calculated_group, direction
+        FROM group_transition
+        WHERE point_id = ? AND year = ?
+        ORDER BY month
+        """,
+        (point_id, year),
+    ).fetchall()
+    return [(int(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in rows]
+
+
+def point_month_line(
+    connection: sqlite3.Connection, point_id: int, year: int, month: int
+) -> tuple[str | None, str | None, str | None, str | None, str | None, str, bool] | None:
+    """Строка точки на прогоне этого месяца. Прогон другого месяца не читает."""
+    row = connection.execute(
+        """
+        SELECT
+            result_line.volume,
+            result_line.base,
+            result_line.cost_110,
+            result_line.cost_150,
+            result_line.surcharge,
+            result_line.group_code,
+            result_line.gap
+        FROM result_line
+        JOIN run ON run.id = result_line.run_id
+        WHERE run.year = ?
+          AND run.month = ?
+          AND result_line.point_id = ?
+          AND result_line.month = ?
+        """,
+        (year, month, point_id, month),
+    ).fetchone()
+    if row is None:
+        return None
+    return (
+        None if row[0] is None else str(row[0]),
+        None if row[1] is None else str(row[1]),
+        None if row[2] is None else str(row[2]),
+        None if row[3] is None else str(row[3]),
+        None if row[4] is None else str(row[4]),
+        str(row[5]),
+        bool(row[6]),
+    )
+
+
 def insert_fact_discrepancies(
     connection: sqlite3.Connection,
     rows: list[tuple[object, ...]],
@@ -1490,6 +1600,14 @@ def find_consumers(
     return _consumers(connection, fragment, SEARCH_LIMIT)
 
 
+def match_consumers(
+    connection: sqlite3.Connection,
+    fragment: str,
+) -> list[tuple[int, str, str, str, str, str | None, str, str]]:
+    """Все потребители вкладки по фрагменту. Потолок подсказки не применяется."""
+    return _consumers(connection, fragment, None)
+
+
 def list_contracts(connection: sqlite3.Connection) -> list[_ContractRow]:
     return _contracts(connection, None, "", None)
 
@@ -1509,6 +1627,11 @@ def search_contracts(
 ) -> list[_ContractRow]:
     """Договоры по номеру среди всех потребителей, не больше SEARCH_LIMIT."""
     return _contracts(connection, None, fragment, SEARCH_LIMIT)
+
+
+def match_contracts(connection: sqlite3.Connection, fragment: str) -> list[_ContractRow]:
+    """Все договоры вкладки по номеру. Потолок подсказки не применяется."""
+    return _contracts(connection, None, fragment, None)
 
 
 def search_contract_choices(
@@ -1569,6 +1692,11 @@ def list_points(connection: sqlite3.Connection) -> list[_PointRow]:
 def find_points(connection: sqlite3.Connection, fragment: str) -> list[_PointRow]:
     """Точки по номеру или адресу, не больше SEARCH_LIMIT."""
     return _points(connection, fragment, SEARCH_LIMIT)
+
+
+def match_points(connection: sqlite3.Connection, fragment: str) -> list[_PointRow]:
+    """Все точки вкладки по номеру или адресу. Потолок подсказки не применяется."""
+    return _points(connection, fragment, None)
 
 
 def _consumers(
