@@ -38,8 +38,6 @@ SHEET = "Точка"
 PLAN_HEADERS = (
     "Договор",
     "Объём, тыс. м³",
-    "Транспортировка, руб.",
-    "Спецнадбавка, руб.",
 )
 FACT_HEADERS = (
     "Месяц",
@@ -193,21 +191,12 @@ def header_pairs(report: PointReport) -> tuple[tuple[str, str], ...]:
     )
 
 
-def plan_table_rows(report: PointReport) -> tuple[tuple[str, str, str, str], ...]:
+def plan_table_rows(report: PointReport) -> tuple[tuple[str, str], ...]:
+    """Договор и годовой объём. Суммы транспортировки и спецнадбавки в план не входят."""
     if report.population or not report.contracts:
         return ()
-    rows = [
-        (item.number, _shown(item.volume), _shown(item.transport), _shown(item.surcharge))
-        for item in report.contracts
-    ]
-    rows.append(
-        (
-            PLAN_TOTAL,
-            _shown(report.plan_volume),
-            _shown(report.plan_transport),
-            _shown(report.plan_surcharge),
-        )
-    )
+    rows = [(item.number, _shown(item.volume)) for item in report.contracts]
+    rows.append((PLAN_TOTAL, _shown(report.plan_volume)))
     return tuple(rows)
 
 

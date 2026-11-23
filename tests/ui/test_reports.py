@@ -23,7 +23,7 @@ from tests.application.point_report_data import (
     GROUP,
     JANUARY,
     PLAN_TOTAL_ROW,
-    PLAN_TRANSPORT_COLUMN,
+    PLAN_VOLUME_COLUMN,
     POINT,
     TRANSITION_DIRECTION_COLUMN,
     TRANSITION_ROW,
@@ -65,8 +65,8 @@ def test_point_tab_shows_plan_fact_and_transition(qapp: QApplication, tmp_path: 
         assert _shown_lines(window, "reportBuyer") == BUYER_LINES
         assert _label(window, "reportGroup") == GROUP.value
         assert (
-            _cell(window, "reportPlan", PLAN_TOTAL_ROW, PLAN_TRANSPORT_COLUMN)
-            == (plan[PLAN_TOTAL_ROW][PLAN_TRANSPORT_COLUMN])
+            _cell(window, "reportPlan", PLAN_TOTAL_ROW, PLAN_VOLUME_COLUMN)
+            == (plan[PLAN_TOTAL_ROW][PLAN_VOLUME_COLUMN])
         )
         assert _cell(window, "reportMonths", FEBRUARY - 1, FACT_VOLUME_COLUMN) == UNCLOSED_TEXT
         assert (

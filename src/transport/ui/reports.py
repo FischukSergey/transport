@@ -47,7 +47,7 @@ MATCH_ROWS = 5
 YEAR_CHARS = 8
 _ARROW_PX = 28
 # Адрес и наименование покупателя не входят в одну строку.
-ADDRESS_LINES = 3
+ADDRESS_LINES = 2
 BUYER_LINES = 2
 
 

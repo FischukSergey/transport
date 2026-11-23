@@ -44,7 +44,7 @@ from tests.application.point_report_data import (
     PLAN_TOTAL_ROW,
     PLAN_TOTAL_TEXT,
     PLAN_TRANSPORT,
-    PLAN_TRANSPORT_COLUMN,
+    PLAN_VOLUME_COLUMN,
     POINT,
     POINT_VOLUME,
     POPULATION_BUYER,
@@ -67,6 +67,7 @@ from tests.application.point_report_data import (
 
 from transport.application.close import close_month
 from transport.application.point_report import (
+    PLAN_HEADERS,
     month_table_rows,
     plan_table_rows,
     point_report,
@@ -225,9 +226,10 @@ def test_workbook_repeats_the_screen_rows(tmp_path: Path) -> None:
         path = tmp_path / "point.xlsx"
         write_point_report(path, report)
         sheet = load_workbook(path).active
-        shown = plan_table_rows(report)[PLAN_TOTAL_ROW][PLAN_TRANSPORT_COLUMN]
+        shown = plan_table_rows(report)[PLAN_TOTAL_ROW][PLAN_VOLUME_COLUMN]
         assert sheet.title == SHEET_TITLE
-        assert _money(sheet, PLAN_TOTAL_TEXT) == shown
+        assert _plan_volume(sheet, PLAN_TOTAL_TEXT) == shown
+        assert _plan_headers(sheet) == PLAN_HEADERS
         assert _after(sheet, FACT_SECTION, FEBRUARY_TITLE, FACT_VOLUME_COLUMN) == UNCLOSED_TEXT
     finally:
         connection.close()
@@ -479,14 +481,29 @@ def _open(tmp_path: Path) -> sqlite3.Connection:
     return open_database(tmp_path / "report.sqlite")
 
 
-def _money(sheet, title: str) -> str:
-    found = [
-        sheet.cell(row, PLAN_TRANSPORT_COLUMN + 1).value
-        for row in range(1, sheet.max_row + 1)
-        if sheet.cell(row, 1).value == title and sheet.cell(row, PLAN_TRANSPORT_COLUMN + 1).value
-    ]
+def _plan_volume(sheet, title: str) -> str:
+    seen = False
+    found: list[object] = []
+    for row in range(1, sheet.max_row + 1):
+        if sheet.cell(row, 1).value == PLAN_HEADERS[0]:
+            seen = True
+            continue
+        if seen and sheet.cell(row, 1).value == title:
+            found.append(sheet.cell(row, PLAN_VOLUME_COLUMN + 1).value)
+            break
     assert len(found) == STORED_RUN
     return str(found[0])
+
+
+def _plan_headers(sheet) -> tuple[object, ...]:
+    for row in range(1, sheet.max_row + 1):
+        if sheet.cell(row, 1).value == PLAN_HEADERS[0]:
+            return tuple(
+                sheet.cell(row, column).value
+                for column in range(1, sheet.max_column + 1)
+                if sheet.cell(row, column).value
+            )
+    raise AssertionError(PLAN_HEADERS[0])
 
 
 def _after(sheet, marker: str, title: str, column: int) -> str:

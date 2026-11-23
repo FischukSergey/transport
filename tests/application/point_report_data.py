@@ -45,7 +45,6 @@ CHEAPER_TEXT = "дешевле"
 UNCLOSED_TEXT = "не закрыт"
 NO_TRANSITION_TEXT = "переходов нет"
 POPULATION_TEXT = "Население в отчёт не входит."
-PLAN_TRANSPORT_COLUMN = 2
 PLAN_VOLUME_COLUMN = 1
 PLAN_TOTAL_ROW = 2
 FACT_VOLUME_COLUMN = 1
