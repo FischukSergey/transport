@@ -1,4 +1,4 @@
-"""Окно отчётов. Формулы не вызывает: карточка точки читается из прикладного слоя."""
+"""Окно отчётов. Формулы не вызывает: карточки читаются из прикладного слоя."""
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +22,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from transport.application.catalog import Catalog, PointLine
+from transport.application.catalog import Catalog, ConsumerLine, PointLine
+from transport.application.consumer_report import (
+    SUMMARY_HEADERS,
+    ConsumerReport,
+    consumer_report,
+    summary_rows,
+    write_consumer_report,
+)
+from transport.application.consumer_report import header_pairs as consumer_header_pairs
 from transport.application.point_report import (
     FACT_HEADERS,
     NO_TRANSITION,
@@ -40,6 +48,7 @@ from transport.application.point_report import (
 from transport.ui.window import _fill, _picked, _table
 
 POINT_TAB = "Точка"
+CONSUMER_TAB = "Потребитель"
 SAVE_TEXT = "Сохранить"
 SAVED_TEXT = "Файл записан."
 SEARCH_CHARS = 48
@@ -49,6 +58,7 @@ _ARROW_PX = 28
 # Адрес и наименование покупателя не входят в одну строку.
 ADDRESS_LINES = 2
 BUYER_LINES = 2
+NAME_LINES = 2
 
 
 class ReportsWindow(QMainWindow):
@@ -58,10 +68,14 @@ class ReportsWindow(QMainWindow):
         self._point_rows: list[PointLine] = []
         self._point_id: int | None = None
         self._report: PointReport | None = None
+        self._consumer_rows: list[ConsumerLine] = []
+        self._consumer_id: int | None = None
+        self._consumer_report: ConsumerReport | None = None
         self.setWindowTitle("Отчеты")
-        self.resize(980, 760)
+        self.resize(1100, 760)
         self._build()
         self._fill_points()
+        self._fill_consumers()
 
     def _build(self) -> None:
         today = datetime.now(UTC).date()
@@ -115,6 +129,7 @@ class ReportsWindow(QMainWindow):
         tabs = QTabWidget()
         tabs.setObjectName("reportTabs")
         tabs.addTab(self._point_page(), POINT_TAB)
+        tabs.addTab(self._consumer_page(), CONSUMER_TAB)
         layout.addWidget(tabs)
         self.setCentralWidget(page)
 
@@ -232,6 +247,144 @@ class ReportsWindow(QMainWindow):
             self._message.setText(str(exc))
             return
         self._message.setText(SAVED_TEXT)
+
+    def _consumer_page(self) -> QWidget:
+        today = datetime.now(UTC).date()
+        self._consumer_year = QSpinBox()
+        self._consumer_year.setObjectName("consumerYear")
+        self._consumer_year.setRange(2000, 2100)
+        self._consumer_year.setValue(today.year)
+        _fit(self._consumer_year, YEAR_CHARS)
+        self._consumer_search = QLineEdit()
+        self._consumer_search.setObjectName("consumerSearch")
+        self._consumer_search.setPlaceholderText("Код, наименование или ИНН")
+        _fit(self._consumer_search, SEARCH_CHARS, grow=True)
+        self._consumer_matches = _table(["Код", "Наименование"])
+        self._consumer_matches.setObjectName("consumerMatches")
+        match_header = self._consumer_matches.horizontalHeader()
+        match_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        match_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        line = self._consumer_matches.fontMetrics().lineSpacing()
+        header = max(self._consumer_matches.horizontalHeader().sizeHint().height(), line)
+        self._consumer_matches.setFixedHeight(line * MATCH_ROWS + header)
+        self._consumer_code = _caption("consumerCode")
+        self._consumer_name = _lines("consumerName", NAME_LINES)
+        self._consumer_region = _caption("consumerRegion")
+        self._consumer_kind = _caption("consumerKind")
+        self._consumer_note = QLabel("")
+        self._consumer_note.setObjectName("consumerNote")
+        self._consumer_note.setWordWrap(True)
+        self._consumer_note.hide()
+        self._consumer_points = _table(list(SUMMARY_HEADERS))
+        self._consumer_points.setObjectName("consumerPoints")
+        point_header = self._consumer_points.horizontalHeader()
+        point_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        point_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._consumer_save = QPushButton(SAVE_TEXT)
+        self._consumer_save.setObjectName("consumerSave")
+        self._consumer_save.setEnabled(False)
+        self._consumer_message = QLabel("")
+        self._consumer_message.setObjectName("consumerMessage")
+        self._consumer_message.setWordWrap(True)
+        self._consumer_year.valueChanged.connect(self._show_consumer)
+        self._consumer_search.textChanged.connect(self._fill_consumers)
+        self._consumer_matches.itemSelectionChanged.connect(self._pick_consumer)
+        self._consumer_save.clicked.connect(self._save_consumer)
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        picker = QHBoxLayout()
+        picker.addWidget(QLabel("Год"))
+        picker.addWidget(self._consumer_year)
+        picker.addWidget(QLabel("Потребитель"))
+        column = QVBoxLayout()
+        column.setContentsMargins(0, 0, 0, 0)
+        column.addWidget(self._consumer_search)
+        column.addWidget(self._consumer_matches)
+        picker.addLayout(column, stretch=1)
+        layout.addLayout(picker)
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        form.addRow("Потребитель", self._consumer_code)
+        form.addRow("Наименование", self._consumer_name)
+        form.addRow("Регион", self._consumer_region)
+        form.addRow("Тип", self._consumer_kind)
+        layout.addLayout(form)
+        layout.addWidget(self._consumer_note)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        self._consumer_points_title = QLabel("Точки")
+        body_layout.addWidget(self._consumer_points_title)
+        body_layout.addWidget(self._consumer_points)
+        body_layout.addWidget(self._consumer_save)
+        body_layout.addWidget(self._consumer_message)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(body)
+        layout.addWidget(scroll, stretch=1)
+        return page
+
+    def _fill_consumers(self) -> None:
+        self._consumer_rows = self._catalog.find_consumers(self._consumer_search.text().strip())
+        _fill(
+            self._consumer_matches,
+            [(row.code, row.name) for row in self._consumer_rows],
+        )
+
+    def _pick_consumer(self) -> None:
+        row = _picked(self._consumer_matches, self._consumer_rows)
+        if row is None:
+            return
+        self._consumer_id = row.consumer_id
+        self._show_consumer()
+
+    def _show_consumer(self) -> None:
+        if self._consumer_id is None:
+            return
+        self._consumer_report = consumer_report(
+            self._catalog.connection(),
+            consumer_id=self._consumer_id,
+            year=self._consumer_year.value(),
+        )
+        self._consumer_message.setText("")
+        report = self._consumer_report
+        if report is None:
+            self._consumer_save.setEnabled(False)
+            return
+        values = dict(consumer_header_pairs(report))
+        self._consumer_code.setText(values["Потребитель"])
+        self._consumer_name.setPlainText(values["Наименование"])
+        self._consumer_region.setText(values["Регион"])
+        self._consumer_kind.setText(values["Тип"])
+        self._consumer_note.setText(POPULATION_NOTE if report.population else "")
+        self._consumer_note.setVisible(report.population)
+        self._consumer_points_title.setVisible(not report.population)
+        self._consumer_points.setVisible(not report.population)
+        _fill(self._consumer_points, [tuple(row) for row in summary_rows(report)])
+        self._consumer_save.setEnabled(True)
+
+    def _save_consumer(self) -> None:
+        report = self._consumer_report
+        if report is None:
+            return
+        chosen, _selected = QFileDialog.getSaveFileName(
+            self,
+            SAVE_TEXT,
+            f"{report.code} {self._consumer_year.value()}.xlsx",
+            "Книга (*.xlsx)",
+        )
+        if not chosen:
+            return
+        path = Path(chosen)
+        if path.suffix.lower() != ".xlsx":
+            path = path.with_suffix(".xlsx")
+        try:
+            write_consumer_report(path, report)
+        except OSError as exc:
+            self._consumer_message.setText(str(exc))
+            return
+        self._consumer_message.setText(SAVED_TEXT)
 
 
 def _caption(name: str) -> QLabel:

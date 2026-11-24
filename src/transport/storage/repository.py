@@ -802,6 +802,23 @@ def point_card(
     )
 
 
+def consumer_point_ids(connection: sqlite3.Connection, consumer_id: int) -> list[int]:
+    """Точки договоров этого потребителя. Чужие и удалённые не входят."""
+    rows = connection.execute(
+        """
+        SELECT point.id
+        FROM point
+        JOIN contract ON contract.id = point.contract_id
+        WHERE contract.consumer_id = ?
+          AND point.deleted_on IS NULL
+          AND contract.deleted_on IS NULL
+        ORDER BY point.code
+        """,
+        (consumer_id,),
+    ).fetchall()
+    return [int(row[0]) for row in rows]
+
+
 def annual_contract_volumes(
     connection: sqlite3.Connection, point_id: int, year: int
 ) -> list[tuple[str, str]]:
@@ -1278,6 +1295,24 @@ def consumer_card(connection: sqlite3.Connection, consumer_id: int) -> tuple[str
     if row is None:
         return None
     return str(row[0]), str(row[1])
+
+
+def consumer_identity(
+    connection: sqlite3.Connection, consumer_id: int
+) -> tuple[str, str, str, str, str] | None:
+    """Код, наименование, регион и вид. Удалённого потребителя нет."""
+    row = connection.execute(
+        """
+        SELECT consumer.code, consumer.name, region.code, region.name, consumer.kind
+        FROM consumer
+        JOIN region ON region.id = consumer.region_id
+        WHERE consumer.id = ? AND consumer.deleted_on IS NULL
+        """,
+        (consumer_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return (str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]))
 
 
 def consumer_names(connection: sqlite3.Connection) -> list[str]:

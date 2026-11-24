@@ -230,11 +230,16 @@ def write_point_report(path: Path | str, report: PointReport) -> None:
     book = Workbook()
     sheet = book.active
     sheet.title = SHEET
+    append_point_report(sheet, report)
+    book.save(path)
+
+
+def append_point_report(sheet, report: PointReport) -> None:
+    """Дописывает карточку точки на уже открытый лист. Книгу не создаёт и расчёт не запускает."""
     for title, value in header_pairs(report):
         sheet.append([title, value])
     if report.population:
         sheet.append([POPULATION_NOTE])
-        book.save(path)
         return
     sheet.append([])
     sheet.append(list(PLAN_HEADERS))
@@ -253,7 +258,6 @@ def write_point_report(path: Path | str, report: PointReport) -> None:
     sheet.append(list(FACT_HEADERS))
     for row in month_table_rows(report):
         sheet.append(list(row))
-    book.save(path)
 
 
 def _population(

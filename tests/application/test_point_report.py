@@ -254,6 +254,7 @@ def test_population_workbook_has_no_amounts(tmp_path: Path) -> None:
 
 def test_report_does_not_change_group() -> None:
     names = _names(Path("src/transport/application/point_report.py"))
+    names.update(_names(Path("src/transport/application/consumer_report.py")))
     names.update(_names(Path("src/transport/ui/reports.py")))
     assert names.isdisjoint(_ENGINE)
 
